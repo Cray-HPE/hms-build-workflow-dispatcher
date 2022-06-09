@@ -1,0 +1,6 @@
+credentials.json
+csm/
+helm_charts/
+*tar.gz
+*.tgz
+.idea/

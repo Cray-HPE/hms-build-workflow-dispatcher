@@ -1,0 +1,17 @@
+{
+  "CSM-manifest-repo-name": "csm",
+  "targeted-csm-branches": [
+    "main",
+    "release/1.2",
+    "release/1.2.5"
+  ],
+  "docker-image-manifest": "docker/index.yaml",
+  "docker-image-compare": "docker-index-compare.yaml",
+  "images": [
+    "hms-pytest",
+    "hms-shcd-parser",
+    "hms-trs-worker-http-v1"
+  ],
+  "helm-manifest-directory": "manifests",
+  "target-chart-regex": "cray-hms-.*"
+}

@@ -1,0 +1,9 @@
+#here are all the key paths to search for! We are trying to find the docker images we need to go inspect!
+artifactory.algol60.net/csm-docker/stable:
+  images:
+    hms-pytest:
+      - find_me
+    hms-shcd-parser:
+      - find_me
+    hms-trs-worker-http-v1:
+      - find_me
