@@ -14,6 +14,76 @@ import requests
 import tarfile
 
 
+def LaunchRebuilds(github, images_to_rebuild):
+    desired_workflow_names = ["Build and Publish Service Docker Images", "Build and Publish Docker Images", "Build and Publish CT Docker Images" ]
+
+    for repo_name, val in images_to_rebuild.items():
+        print(repo_name)
+        images = images_to_rebuild[repo_name] #im going to be writing back to this
+        repo_data = g.get_organization("Cray-HPE").get_repo(repo_name)
+        available_workflows = []
+        for workflow in repo_data.get_workflows():
+            if workflow.name in desired_workflow_names:
+                available_workflows.append(workflow)
+
+        for image in images:
+            image_tag = image["image-tag"]
+            git_tag = "v" + str(image_tag) #we always tag like v1.2.3
+            short_name = image["short-name"]
+            full_image = image["full-image"]
+            commit = None
+            executed_workflow = None
+
+            is_test = re.search(".*-test", short_name)
+
+            tags = []
+            for tag in repo_data.get_tags():
+                tags.append(tag)
+            for tag in tags:
+                if tag.name == git_tag:
+                    commit = tag.commit.commit.sha
+                    image["commit"] = commit
+                    break #no reason to continue
+
+            #todo need to have error checking in case we cant match the tag! commit will be None
+            #todo need to identify if a image never gets built! or has no workflows, or isnt happy path!
+            # todo error checking for launched
+            launched = False
+            for available_workflow in available_workflows:
+                if is_test is not None and available_workflow.name == "Build and Publish CT Docker Images": #this is a test image and the CT image workflow
+                    launched = available_workflow.create_dispatch(git_tag)
+                    executed_workflow = available_workflow.name
+                    image["workflow"] = available_workflow.name
+                elif is_test is None and available_workflow.name != "Build and Publish CT Docker Images" : #this is NOT a test, and we are NOT using the CT image workflow
+                    launched = available_workflow.create_dispatch(git_tag)
+                    executed_workflow = available_workflow.name
+                    image["workflow"] = available_workflow.name
+            image["rebuilt-initiated"] = launched
+
+            print(str(repo_name), str(commit), str(short_name), str(executed_workflow), str(git_tag), str(launched))
+    print(images_to_rebuild)
+
+
+
+
+
+            # print(workflow)
+            # for run in workflow.get_runs():
+            #     print(run)
+            #     run.
+            # workflow.create_dispatch()
+            # workflow.create_dispatch("v1.9.0",)
+            # repo_data.create_repository_dispatch()
+            # fas = g.get_organization("Cray-HPE").get_repo("hms-firmware-action")
+            # for workflow in fas.get_workflows():
+            #     if workflow.name == "Build and Publish Service Docker Images":
+            #         ret = workflow.create_dispatch("v1.19.0")
+            #         print(ret)
+            #
+            # 1 / 0
+    return None
+
+
 def GetDockerImageFromDiff(value, tag):
     # example: root['artifactory.algol60.net/csm-docker/stable']['images']['hms-trs-worker-http-v1'][0]
     values = value.split(']')
@@ -117,25 +187,36 @@ if __name__ == '__main__':
     # Reshape the data
     docker_image_tuples = list(set(docker_image_tuples))
     images_to_rebuild = {}
+    images = []
+    # Concert tuple to dict
     for tuple in docker_image_tuples:
-        data = {}
-        data["images"] = []
-        image_name = tuple[1]
-        if image_name in images_to_rebuild:
-            data = images_to_rebuild[image_name]
-        datum = {}
-        datum["full-image"] = tuple[0]
-        datum["image-tag"] = tuple[2]
-        data["images"].append(datum)
-        images_to_rebuild[image_name] = data
+        # data = {}
+        # data["images"] = []
+        # image_name = tuple[1]
+        # if image_name in images_to_rebuild:
+        #     data = images_to_rebuild[image_name]
+        image = {}
+        image["full-image"] = tuple[0]
+        image["short-name"] = tuple[1]
+        image["image-tag"] = tuple[2]
+        images.append(image)
+        # data["images"].append(datum)
+        # images_to_rebuild[image_name] = data
 
     # add in the repo information
     with open('repo-image-lookup.json', 'r') as file:
         repo_lookup = json.load(file)
     #
-    for item in repo_lookup:
-        if item["image"] in images_to_rebuild:
-            images_to_rebuild[item["image"]]["repo"] = item["repo"]
+    for repo in repo_lookup:
+        for image in images:
+            if repo["image"] == image["short-name"]:
+                if repo["repo"] in images_to_rebuild:
+                    repo_val = images_to_rebuild[repo["repo"]]
+                    repo_val.append(image)
+                    repo["repo"] = repo_val
+                else:
+                    images_to_rebuild[repo["repo"]] = []
+                    images_to_rebuild[repo["repo"]].append(image)
 
     ####################
     # Start to process helm charts
@@ -151,6 +232,8 @@ if __name__ == '__main__':
         # TODO its al so possible that a docker-image override is specified, we HAVE TO check for that!
         # example download link: https://artifactory.algol60.net/artifactory/csm-helm-charts/stable/cray-hms-bss/cray-hms-bss-2.0.4.tgz
         # TODO will helm charts always be in stable?
+        # Ive added the helm-lookup file because its a bunch of 'black magic' how the CSM repo knows where to download charts from
+        # the hms-hmcollector is the exception that broke the rule, so a lookup is needed.
 
         helm_files = glob.glob(os.path.join(csm_dir, config["helm-manifest-directory"]) + "/*.yaml")
         for helm_file in helm_files:
@@ -165,11 +248,11 @@ if __name__ == '__main__':
                 upstream_sources[chart["name"]] = chart["location"]
             for chart in manifest["spec"]["charts"]:
                 if re.search(config["target-chart-regex"], chart["name"]) is not None:
-                #TODO this is happy path only, im ignoring any mis-lookups; need to fix it!
-                    for item in helm_lookup:
-                        if item["chart"] == chart["name"]:
+                    # TODO this is happy path only, im ignoring any mis-lookups; need to fix it!
+                    for repo in helm_lookup:
+                        if repo["chart"] == chart["name"]:
                             charts_to_download.append(urljoin(upstream_sources[chart["source"]],
-                                                              os.path.join(item["path"], chart["name"] + "-" + str(
+                                                              os.path.join(repo["path"], chart["name"] + "-" + str(
                                                                   chart["version"]) + ".tgz")))
     charts_to_download = sorted(list(set(charts_to_download)))
 
@@ -189,18 +272,89 @@ if __name__ == '__main__':
         chart_url = []
         chart_url = chart.split('/')
         file_name = chart_url[-1]
-        download_file_path = os.path.join(helm_dir,file_name)
+        download_file_path = os.path.join(helm_dir, file_name)
         # download started
         with open(download_file_path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024 * 1024):
                 if chunk:
                     f.write(chunk)
-        #TODO need to check if the file downloaded or not
+        # TODO need to check if the file downloaded or not
 
-
-        folder_name = file_name.replace('.tgz','')
+        folder_name = file_name.replace('.tgz', '')
         file = tarfile.open(download_file_path)
-        file.extractall(os.path.join(helm_dir,folder_name))
+        file.extractall(os.path.join(helm_dir, folder_name))
         file.close()
-#
+
+    # the structure is well known: {helm-chart}-version/{helm-chart}/all-the-goodness-we-want
+    for file in os.listdir(helm_dir):
+        helm_chart_dir = os.path.join(helm_dir, file)
+        if os.path.isdir(helm_chart_dir):
+            for entry in os.listdir(helm_chart_dir):
+                chart_dir = os.path.join(helm_chart_dir, entry)
+                if os.path.isdir(chart_dir):
+                    with open(os.path.join(chart_dir, "Chart.yaml")) as stream:
+                        try:
+                            chart = yaml.safe_load(stream)
+                        except yaml.YAMLError as exc:
+                            print(exc)
+                            exit(1)  # todo need to do something else
+                    with open(os.path.join(chart_dir, "values.yaml")) as stream:
+                        try:
+                            values = yaml.safe_load(stream)
+                        except yaml.YAMLError as exc:
+                            print(exc)
+                            exit(1)  # todo need to do something else
+                    # Do Some stuff with this chart info
+                    # THIS ASSUMES there is only one source and its the 0th one that we care about. I believe this is true for HMS
+                    source = chart["sources"][0]
+                    repo = source.split('/')[-1]
+
+                    ## Assumed values.yaml structure
+                    # global:
+                    #  appVersion: 2.1.0
+                    #  testVersion: 2.1.0
+                    # tests:
+                    #  image:
+                    #    repository: artifactory.algol60.net/csm-docker/stable/cray-capmc-test
+                    #    pullPolicy: IfNotPresent
+                    #
+                    # image:
+                    #  repository: artifactory.algol60.net/csm-docker/stable/cray-capmc
+                    #  pullPolicy: IfNotPresent
+                    ### Its possible that there might not be a 'tests' value, but I will handle that.
+
+                    main_image_tag = values["global"]["appVersion"]
+                    main_image = values["image"]["repository"]
+                    main_short_image = main_image.split('/')[-1]
+                    test_image_tag = None
+                    test_image = None
+                    test_short_image = None
+                    if "testVersion" in values["global"]:
+                        test_image_tag = values["global"]["testVersion"]
+                        test_image = values["tests"]["image"]["repository"]
+                        test_short_image = test_image.split('/')[-1]
+
+                    images = []
+                    image = {}
+                    image["full-image"] = main_image
+                    image["short-name"] = main_short_image
+                    image["image-tag"] = main_image_tag
+                    images.append(image)
+                    if test_image is not None:
+                        image = {}
+                        image["full-image"] = test_image
+                        image["short-name"] = test_short_image
+                        image["image-tag"] = test_image_tag
+                        images.append(image)
+
+                    if repo in images_to_rebuild:
+                        repo_val = images_to_rebuild[repo]
+                        repo_val.extend(images)
+                        images_to_rebuild[repo] = repo_val
+                    else:
+                        images_to_rebuild[repo] = []
+                        images_to_rebuild[repo].extend(images)
+
+    print(images_to_rebuild)
+    LaunchRebuilds(g, images_to_rebuild)
 # print(csm_repo_metadata.get_branch("main").name)
