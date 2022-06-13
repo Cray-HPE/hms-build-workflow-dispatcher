@@ -1,7 +1,7 @@
 {
-  "CSM-manifest-repo-name": "csm",
+  "manifest-repo": "csm",
   "targeted-csm-branches": [
-    "CASMHMS-5559"
+    "main"
   ],
   "docker-image-manifest": "docker/index.yaml",
   "docker-image-compare": "docker-index-compare.yaml",

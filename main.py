@@ -12,77 +12,12 @@ import re
 from urllib.parse import urljoin
 import requests
 import tarfile
+import time
 
 
-def LaunchRebuilds(github, images_to_rebuild):
-    desired_workflow_names = ["Build and Publish Service Docker Images", "Build and Publish Docker Images", "Build and Publish CT Docker Images" ]
-
-    for repo_name, val in images_to_rebuild.items():
-        print(repo_name)
-        images = images_to_rebuild[repo_name] #im going to be writing back to this
-        repo_data = g.get_organization("Cray-HPE").get_repo(repo_name)
-        available_workflows = []
-        for workflow in repo_data.get_workflows():
-            if workflow.name in desired_workflow_names:
-                available_workflows.append(workflow)
-
-        for image in images:
-            image_tag = image["image-tag"]
-            git_tag = "v" + str(image_tag) #we always tag like v1.2.3
-            short_name = image["short-name"]
-            full_image = image["full-image"]
-            commit = None
-            executed_workflow = None
-
-            is_test = re.search(".*-test", short_name)
-
-            tags = []
-            for tag in repo_data.get_tags():
-                tags.append(tag)
-            for tag in tags:
-                if tag.name == git_tag:
-                    commit = tag.commit.commit.sha
-                    image["commit"] = commit
-                    break #no reason to continue
-
-            #todo need to have error checking in case we cant match the tag! commit will be None
-            #todo need to identify if a image never gets built! or has no workflows, or isnt happy path!
-            # todo error checking for launched
-            launched = False
-            for available_workflow in available_workflows:
-                if is_test is not None and available_workflow.name == "Build and Publish CT Docker Images": #this is a test image and the CT image workflow
-                    launched = available_workflow.create_dispatch(git_tag)
-                    executed_workflow = available_workflow.name
-                    image["workflow"] = available_workflow.name
-                elif is_test is None and available_workflow.name != "Build and Publish CT Docker Images" : #this is NOT a test, and we are NOT using the CT image workflow
-                    launched = available_workflow.create_dispatch(git_tag)
-                    executed_workflow = available_workflow.name
-                    image["workflow"] = available_workflow.name
-            image["rebuilt-initiated"] = launched
-
-            print(str(repo_name), str(commit), str(short_name), str(executed_workflow), str(git_tag), str(launched))
-    print(images_to_rebuild)
-
-
-
-
-
-            # print(workflow)
-            # for run in workflow.get_runs():
-            #     print(run)
-            #     run.
-            # workflow.create_dispatch()
-            # workflow.create_dispatch("v1.9.0",)
-            # repo_data.create_repository_dispatch()
-            # fas = g.get_organization("Cray-HPE").get_repo("hms-firmware-action")
-            # for workflow in fas.get_workflows():
-            #     if workflow.name == "Build and Publish Service Docker Images":
-            #         ret = workflow.create_dispatch("v1.19.0")
-            #         print(ret)
-            #
-            # 1 / 0
-    return None
-
+# This is very procedural oriented code. I haven't split much of this into function calls, because I think the whole
+# process will be ~500 lines of code.  TODO This could withstand some clean up, but encapsulation in methods in this case won't
+# lend to reusability, just organization (which is still a valid reason).
 
 def GetDockerImageFromDiff(value, tag):
     # example: root['artifactory.algol60.net/csm-docker/stable']['images']['hms-trs-worker-http-v1'][0]
@@ -101,16 +36,12 @@ def FindImagePart(value):
     return value.replace(replace1, '')
 
 
-def GetTargetedDockerImagesFromManifest(path, imageKeys):
-    return "fp"
-
-
 if __name__ == '__main__':
 
     ####################
     # Load Configuration
     ####################
-
+    print("load configuration")
     with open('credentials.json', 'r') as file:
         data = json.load(file)
     github_username = data["github"]["username"]
@@ -124,8 +55,9 @@ if __name__ == '__main__':
     ####################
     # Download the CSM repo
     ####################
+    print("retrieve manifest repo")
 
-    csm = config["CSM-manifest-repo-name"]
+    csm = config["manifest-repo"]
     csm_repo_metadata = g.get_organization("Cray-HPE").get_repo(csm)
     csm_dir = csm
     # Clean up in case it exsts
@@ -138,13 +70,13 @@ if __name__ == '__main__':
     ####################
     # Go Get LIST of Docker Images we need to investigate!
     ####################
+    print("find docker images")
+
     docker_image_tuples = []
     for branch in config["targeted-csm-branches"]:
         csm_repo.git.checkout(branch)
-        # print("Setting branch to:" + csm_repo.active_branch.name)
 
         # load the docker index file
-
         docker_index = os.path.join(csm_dir, config["docker-image-manifest"])
         with open(docker_index) as stream:
             try:
@@ -206,7 +138,7 @@ if __name__ == '__main__':
     # add in the repo information
     with open('repo-image-lookup.json', 'r') as file:
         repo_lookup = json.load(file)
-    #
+    print("cross reference docker images with lookup")
     for repo in repo_lookup:
         for image in images:
             if repo["image"] == image["short-name"]:
@@ -224,6 +156,7 @@ if __name__ == '__main__':
     charts_to_download = []
     with open('helm-lookup.json', 'r') as file:
         helm_lookup = json.load(file)
+    print("find helm charts")
 
     for branch in config["targeted-csm-branches"]:
         csm_repo.git.checkout(branch)
@@ -266,6 +199,7 @@ if __name__ == '__main__':
         shutil.rmtree(helm_dir)
 
     os.mkdir(helm_dir)
+    print("download helm charts")
 
     for chart in charts_to_download:
         r = requests.get(chart, stream=True)
@@ -285,6 +219,7 @@ if __name__ == '__main__':
         file.extractall(os.path.join(helm_dir, folder_name))
         file.close()
 
+    print("process helm charts")
     # the structure is well known: {helm-chart}-version/{helm-chart}/all-the-goodness-we-want
     for file in os.listdir(helm_dir):
         helm_chart_dir = os.path.join(helm_dir, file)
@@ -355,6 +290,107 @@ if __name__ == '__main__':
                         images_to_rebuild[repo] = []
                         images_to_rebuild[repo].extend(images)
 
+    #################
+    # Launch Rebuilds
+    #################
+    print("attempting to launch workflows")
+
+    desired_workflow_names = ["Build and Publish Service Docker Images", "Build and Publish Docker Images",
+                              "Build and Publish CT Docker Images"] #Todo what about the hms-test repo workflow? Build and Publish hms-test ...
+
+
+    for repo_name, val in images_to_rebuild.items():
+        images = images_to_rebuild[repo_name]  # im going to be writing back to this
+        repo_data = g.get_organization("Cray-HPE").get_repo(repo_name)
+        available_workflows = []
+        for workflow in repo_data.get_workflows():
+            if workflow.name in desired_workflow_names:
+                available_workflows.append(workflow)
+
+        for image in images:
+            image_tag = image["image-tag"]
+            git_tag = "v" + str(image_tag)  # we always tag like v1.2.3
+            short_name = image["short-name"]
+            full_image = image["full-image"]
+            commit = None
+
+            is_test = re.search(".*-test", short_name)
+
+            tags = []
+            for tag in repo_data.get_tags():
+                tags.append(tag)
+            for tag in tags:
+                if tag.name == git_tag:
+                    commit = tag.commit.commit.sha
+                    image["commit"] = commit
+                    break  # no reason to continue
+
+            # todo need to have error checking in case we cant match the tag! commit will be None
+            # todo need to identify if a image never gets built! or has no workflows, or isnt happy path!
+            # todo error checking for launched
+            launched = False
+            for available_workflow in available_workflows:
+                wf = {}
+                if is_test is not None and available_workflow.name == "Build and Publish CT Docker Images":  # this is a test image and the CT image workflow
+                    #launched = available_workflow.create_dispatch(git_tag)
+                    wf = available_workflow
+                    image["workflow"] = wf
+                elif is_test is None and available_workflow.name != "Build and Publish CT Docker Images":  # this is NOT a test, and we are NOT using the CT image workflow
+                    #launched = available_workflow.create_dispatch(git_tag)
+                    wf = available_workflow
+                    image["workflow"] = wf
+            image["git-tag"] = git_tag
+            #image["workflow-initiated"] = launched
+
+
     print(images_to_rebuild)
-    LaunchRebuilds(g, images_to_rebuild)
-# print(csm_repo_metadata.get_branch("main").name)
+
+    #todo I need to somehow figure out what the ID is for each run and keep checking up on it.
+    # This is ugly, but Github is stupid and refuses to return an ID for a create-dispatch
+    # https://stackoverflow.com/questions/69479400/get-run-id-after-triggering-a-github-workflow-dispatch-event
+    # https://github.com/github-community/community/discussions/9752
+
+    #Go get the runs
+    for k,v in images_to_rebuild.items():
+        images = images_to_rebuild[k]
+        for image in images:
+            workflow = image["workflow"]
+            image["pre-runs"] = []
+            for run in workflow.get_runs(event="workflow_dispatch", branch=image["git-tag"]):
+                image["pre-runs"].append(run)
+            image["workflow-initiated"] = image["workflow"].create_dispatch(image["git-tag"])
+
+
+    time.sleep(5)
+    #wait 5 seconds since github actions are launched on a web-hook; this might not be enough time
+    # Go get the runs
+    for k, v in images_to_rebuild.items():
+        images = images_to_rebuild[k]
+        for image in images:
+            workflow = image["workflow"]
+            image["post-runs"] = []
+            if image["workflow-initiated"] :
+                for run in workflow.get_runs(event="workflow_dispatch", branch=image["git-tag"]):
+                    image["post-runs"].append(run)
+
+
+    #now collate
+    for k, v in images_to_rebuild.items():
+        images = images_to_rebuild[k]
+        for image in images:
+            pre = image["pre-runs"]
+            post = image["post-runs"]
+
+            diff = list(set(post) - set(pre))
+            image["diff"] = diff
+
+            image.pop("pre-runs", None)
+            image.pop("post-runs", None)
+
+            # found = False
+            # for po in post:
+            #     for pr in pre:
+            #         if po.id == pr.id:
+            #             image["workflow-run-id"] = po.id
+
+    print(images_to_rebuild)
