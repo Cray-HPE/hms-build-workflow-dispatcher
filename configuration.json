@@ -6,5 +6,8 @@
   "docker-image-manifest": "docker/index.yaml",
   "docker-image-compare": "docker-index-compare.yaml",
   "helm-manifest-directory": "manifests",
-  "target-chart-regex": "cray-hms-.*"
+  "target-chart-regex": "cray-hms-.*",
+  "sleep-duration-seconds": 5,
+  "time-limit-minutes": 10,
+  "webhook-sleep-seconds": 10
 }
