@@ -18,7 +18,7 @@ jobs:
       - name: Dispatch workflows
         shell: bash
         #todo this needs to be updated to a later image eventually
-        run: docker run -e GITHUB_TOKEN artifactory.algol60.net/csm-docker/unstable/hms-build-workflow-dispatcher:0.0.1-20220615205225.e6f6100
+        run: docker run -e GITHUB_TOKEN artifactory.algol60.net/csm-docker/unstable/hms-build-workflow-dispatcher:0.0.1-20220615225444.9ac9fd7
         env:
           GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
 
