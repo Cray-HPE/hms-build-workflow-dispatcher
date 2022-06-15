@@ -72,9 +72,6 @@ if __name__ == '__main__':
     github_username = data["github"]["username"]
     github_token = data["github"]["token"]
 
-    # with open('configuration.json', 'r') as file:
-    #     config = json.load(file)
-
     with open("configuration.yaml") as stream:
         try:
             config = yaml.safe_load(stream)
@@ -117,13 +114,7 @@ if __name__ == '__main__':
                 logging.error(exc)
                 exit(1)
 
-        docker_compare = os.path.join(config["configuration"]["docker-image-compare"])
-        with open(docker_compare) as stream:
-            try:
-                compare = yaml.safe_load(stream)
-            except yaml.YAMLError as exc:
-                logging.error(exc)
-                exit(1)
+        compare = config["docker-image-compare"]
 
     ############################
     # THis is some brittle logic!
@@ -167,9 +158,7 @@ if __name__ == '__main__':
         # data["images"].append(datum)
         # images_to_rebuild[image_name] = data
 
-    # add in the repo information
-    with open('repo-image-lookup.json', 'r') as file:
-        repo_lookup = json.load(file)
+    repo_lookup = config["repo-image-lookup"]
     logging.info("cross reference docker images with lookup")
     for repo in repo_lookup:
         for image in images:
@@ -186,8 +175,7 @@ if __name__ == '__main__':
     # Start to process helm charts
     ####################
     charts_to_download = []
-    with open('helm-lookup.json', 'r') as file:
-        helm_lookup = json.load(file)
+    helm_lookup = config["helm-repo-lookup"]
     logging.info("find helm charts")
 
     for branch in config["configuration"]["targeted-csm-branches"]:

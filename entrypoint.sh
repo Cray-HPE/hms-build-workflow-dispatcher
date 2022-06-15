@@ -1,3 +1,3 @@
 #! /usr/bin/env bash
 
-/usr/bin/workspace.py ${@:2}
+/usr/bin/workspace.py $@

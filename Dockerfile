@@ -48,7 +48,7 @@ RUN pip3 install --upgrade pip
 
 COPY workspace.py /usr/bin/workspace.py
 COPY entrypoint.sh /src/app/entrypoint.sh
-COPY docker-index-compare.yaml /src/app/docker-index-compare.yaml
+COPY configuration.yaml /src/app/configuration.yaml
 
 #
 ## Run as nobody
