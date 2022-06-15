@@ -43,6 +43,7 @@ configuration:
   sleep-duration-seconds: 5
   time-limit-minutes: 10
   webhook-sleep-seconds: 10
+  log-level: INFO
 docker-image-compare:
   artifactory.algol60.net/csm-docker/stable:
     images:

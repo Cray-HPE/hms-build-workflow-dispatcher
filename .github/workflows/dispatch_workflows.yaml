@@ -1,22 +1,25 @@
 name: Dispatch workflows
 on:
-  - workflow_dispatch
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * *' #7am every day
 jobs:
   dispatch_workflows:
     name: Dispatch workflows
     runs-on: ubuntu-latest
     steps:
-    - name: Auth token for PR creation
-      uses: navikt/github-app-token-generator@v1
-      id: get-token
-      with:
-        private-key: ${{ secrets.AUTOMATIC_WORKFLOW_DISPATCHER_APP_KEY }}
-        app-id: ${{ secrets.AUTOMATIC_WORKFLOW_DISPATCHER_APP_ID }}
+      - name: Auth token for PR creation
+        uses: navikt/github-app-token-generator@v1
+        id: get-token
+        with:
+          private-key: ${{ secrets.AUTOMATIC_WORKFLOW_DISPATCHER_APP_KEY }}
+          app-id: ${{ secrets.AUTOMATIC_WORKFLOW_DISPATCHER_APP_ID }}
 
-    - name: Dispatch workflows
-      shell: bash
-      run: docker run -e GITHUB_TOKEN artifactory.algol60.net/csm-docker/unstable/hms-build-workflow-dispatcher:0.0.1-20220615205225.e6f6100
-      env:
-        GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+      - name: Dispatch workflows
+        shell: bash
+        #todo this needs to be updated to a later image eventually
+        run: docker run -e GITHUB_TOKEN artifactory.algol60.net/csm-docker/unstable/hms-build-workflow-dispatcher:0.0.1-20220615205225.e6f6100
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
 
 

@@ -60,13 +60,11 @@ def FindImagePart(value):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
 
-    webhook_sleep_seconds = 10  # todo get from configuration
     ####################
     # Load Configuration
     ####################
-    logging.info("load configuration")
+
     # with open('credentials.json', 'r') as file:
     #     data = json.load(file)
     # github_username = data["github"]["username"]
@@ -82,6 +80,14 @@ if __name__ == '__main__':
             exit(1)
 
     g = Github(github_token)
+
+    sleep_duration = os.getenv('SLEEP_DURATION_SECONDS', config["configuration"]["sleep-duration-seconds"])
+    expiration_minutes = os.getenv('TIME_LIMIT_MINUTES', config["configuration"]["time-limit-minutes"])
+    webhook_sleep_seconds = os.getenv('WEBHOOK_SLEEP_SECONDS', config["configuration"]["webhook-sleep-seconds"])
+    log_level = os.getenv('LOG_LEVEL', config["configuration"]["log-level"])
+
+    logging.basicConfig(level=log_level)
+    logging.info("load configuration")
 
     ####################
     # Download the CSM repo
@@ -186,8 +192,7 @@ if __name__ == '__main__':
         # its possible the same helm chart is referenced multiple times, so we should collapse the list
         # TODO its al so possible that a docker-image override is specified, we HAVE TO check for that!
         # example download link: https://artifactory.algol60.net/artifactory/csm-helm-charts/stable/cray-hms-bss/cray-hms-bss-2.0.4.tgz
-        # TODO will helm charts always be in stable?
-        # Ive added the helm-lookup file because its a bunch of 'black magic' how the CSM repo knows where to download charts from
+        # Ive added the helm-lookup struct because its a bunch of 'black magic' how the CSM repo knows where to download charts from
         # the hms-hmcollector is the exception that broke the rule, so a lookup is needed.
 
         helm_files = glob.glob(os.path.join(csm_dir, config["configuration"]["helm-manifest-directory"]) + "/*.yaml")
@@ -254,13 +259,13 @@ if __name__ == '__main__':
                             chart = yaml.safe_load(stream)
                         except yaml.YAMLError as exc:
                             logging.error(exc)
-                            exit(1)  # todo need to do something else
+                            exit(1)
                     with open(os.path.join(chart_dir, "values.yaml")) as stream:
                         try:
                             values = yaml.safe_load(stream)
                         except yaml.YAMLError as exc:
                             logging.error(exc)
-                            exit(1)  # todo need to do something else
+                            exit(1)
                     # Do Some stuff with this chart info
                     # THIS ASSUMES there is only one source and its the 0th one that we care about. I believe this is true for HMS
                     source = chart["sources"][0]
@@ -315,10 +320,11 @@ if __name__ == '__main__':
     #################
     # Launch Rebuilds
     #################
-    logging.info("attempting to launch workflows")
+    logging.info("attempting to identify workflows")
 
     desired_workflow_names = ["Build and Publish Service Docker Images", "Build and Publish Docker Images",
-                              "Build and Publish CT Docker Images"]  # Todo what about the hms-test repo workflow? Build and Publish hms-test ...
+                              "Build and Publish CT Docker Images"]
+    # Todo what about the hms-test repo workflow? Build and Publish hms-test ...
 
     for repo_name, val in images_to_rebuild.items():
         images = images_to_rebuild[repo_name]  # im going to be writing back to this
@@ -363,10 +369,10 @@ if __name__ == '__main__':
             image["git-tag"] = git_tag
             # image["workflow-initiated"] = launched
 
-    # todo I need to somehow figure out what the ID is for each run and keep checking up on it.
     # This is ugly, but Github is stupid and refuses to return an ID for a create-dispatch
     # https://stackoverflow.com/questions/69479400/get-run-id-after-triggering-a-github-workflow-dispatch-event
     # https://github.com/github-community/community/discussions/9752
+    logging.info("attempting to launch workflows")
 
     # Go get the runs
     for k, v in images_to_rebuild.items():
@@ -380,6 +386,8 @@ if __name__ == '__main__':
 
     # wait X seconds since github actions are launched on a web-hook; this might not be enough time
     time.sleep(webhook_sleep_seconds)
+
+    logging.info("attempting to find launched workflows")
 
     # Go get the runs
     for k, v in images_to_rebuild.items():
@@ -418,10 +426,9 @@ if __name__ == '__main__':
     # I dont see it in the list: https://pygithub.readthedocs.io/en/latest/github_objects.html
 
     complete = False
-    expiration_minutes = 10  # todo get from configuration
     expiration_time = datetime.now() + timedelta(minutes=expiration_minutes)
     last_request = {}
-    sleep_duration = 5  # todo get from configuration
+
 
     while not complete or expiration_time < datetime.now():
 
@@ -484,4 +491,10 @@ if __name__ == '__main__':
 
     logging.info(json.dumps(rebuilt_images, indent=2))
     logging.info(summary)
+
+    if conclusion_disposition["success"] != len(targeted_workflows):
+        logging.error("some workflows did not report success")
+        exit(1)
+    logging.info("all workflows successfully completed")
+    exit(0)
 

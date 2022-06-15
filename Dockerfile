@@ -1,6 +1,6 @@
 # MIT License
 
-# (C) Copyright [2019-2022] Hewlett Packard Enterprise Development LP
+# (C) Copyright [2022] Hewlett Packard Enterprise Development LP
 
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -45,12 +45,9 @@ RUN pip3 install -r requirements.txt
 
 FROM builder as installer
 
-
 COPY workspace.py /usr/bin/workspace.py
 COPY entrypoint.sh /src/app/entrypoint.sh
 COPY configuration.yaml /src/app/configuration.yaml
-
-
 
 ## Run as nobody
 #RUN chown  -R 65534:65534 /src
