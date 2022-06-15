@@ -40,24 +40,25 @@ RUN set -ex \
         git
 
 COPY requirements.txt .
-
 RUN pip3 install --upgrade pip
+RUN pip3 install -r requirements.txt
 
-#FROM builder as installer
+FROM builder as installer
 
 
 COPY workspace.py /usr/bin/workspace.py
 COPY entrypoint.sh /src/app/entrypoint.sh
 COPY configuration.yaml /src/app/configuration.yaml
 
-#
+
+
 ## Run as nobody
 #RUN chown  -R 65534:65534 /src
 #USER 65534:65534
 
-FROM builder as final
-RUN pip3 install -r requirements.txt
+FROM installer as final
+
+ENV GITHUB_TOKEN "NOTSET"
 
 WORKDIR /src/app
-#ENTRYPOINT ["ls" ]
 ENTRYPOINT [ "./entrypoint.sh" ]

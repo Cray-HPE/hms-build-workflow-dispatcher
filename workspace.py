@@ -67,10 +67,12 @@ if __name__ == '__main__':
     # Load Configuration
     ####################
     logging.info("load configuration")
-    with open('credentials.json', 'r') as file:
-        data = json.load(file)
-    github_username = data["github"]["username"]
-    github_token = data["github"]["token"]
+    # with open('credentials.json', 'r') as file:
+    #     data = json.load(file)
+    # github_username = data["github"]["username"]
+    # github_token = data["github"]["token"]
+
+    github_token = os.getenv("GITHUB_TOKEN")
 
     with open("configuration.yaml") as stream:
         try:
