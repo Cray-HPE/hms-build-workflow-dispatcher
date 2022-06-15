@@ -1,22 +1,45 @@
-# !/usr/bin/env python3
-import os
-from github import Github
-from git import Repo
-import tempfile
-import shutil
-import yaml
-from deepdiff import DeepDiff
-import json
+#!/usr/bin/env python3
+
+# MIT License
+#
+# (C) Copyright [2022] Hewlett Packard Enterprise Development LP
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+
+import collections
+import copy
+from datetime import datetime, timedelta
 import glob
+import json
+import logging
+import os
 import re
-from urllib.parse import urljoin
-import requests
+import shutil
 import tarfile
 import time
-import collections
-from datetime import datetime, timedelta
-import copy
-import logging
+from urllib.parse import urljoin
+
+from deepdiff import DeepDiff
+from git import Repo
+from github import Github
+import requests
+import yaml
 
 
 def GetDockerImageFromDiff(value, tag):
@@ -420,8 +443,7 @@ if __name__ == '__main__':
         occurrences = collections.Counter(status)
         if occurrences["completed"] != len(targeted_workflows):
             complete = False
-        logging.info("waiting for completion")
-        logging.debug(str(occurrences) + "\t sleeping " + str(sleep_duration) + " seconds")
+        logging.info("waiting for completion\t" + str(occurrences) + "\t sleeping " + str(sleep_duration) + " seconds")
         time.sleep(sleep_duration)
 
     conclusion = []
@@ -430,7 +452,8 @@ if __name__ == '__main__':
         conclusion.append(val["conclusion"])
 
     conclusion_disposition = collections.Counter(conclusion)
-    logging.info(conclusion_disposition)
+    summary = {}
+    summary["summary"] = conclusion_disposition
 
     rebuilt_images = copy.deepcopy(images_to_rebuild)
     # make a copy of the dictionary and clean it up, so I can JSON dump it.
@@ -463,3 +486,5 @@ if __name__ == '__main__':
             image.pop("workflow", None)
 
     logging.info(json.dumps(rebuilt_images, indent=2))
+    logging.info(summary)
+
