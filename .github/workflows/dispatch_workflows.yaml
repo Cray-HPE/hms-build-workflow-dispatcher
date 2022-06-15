@@ -1,7 +1,6 @@
 name: Dispatch workflows
 on:
   - workflow_dispatch
-  - push
 jobs:
   dispatch_workflows:
     name: Dispatch workflows
