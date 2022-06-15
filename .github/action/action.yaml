@@ -1,0 +1,58 @@
+#
+# MIT License
+#
+# (C) Copyright [2022] Hewlett Packard Enterprise Development LP
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+#
+
+name: Rebuild HMS Images
+description: Triggers the Github Workflows necessary to rebuild HMS images
+inputs:
+  branch:
+    required: true
+    description: The branch that needs to be rebuilt
+    default: main
+  app-key:
+    required: true
+    description: The private key of the Github App who will create the pull request
+  app-id:
+    required: true
+    description: The app id of the Github App that will create the pull request
+
+
+
+runs:
+  using: "composite"
+  steps:
+
+    - name: Get auth token for PR creation
+      uses: navikt/github-app-token-generator@v1
+      id: get-token
+      with:
+        private-key: ${{ inputs.app-key }}
+        app-id: ${{ inputs.app-id }}
+
+    - name: Dispatch workflows
+      shell: bash
+      run: docker run -e GITHUB_TOKEN artifactory.algol60.net/csm-docker/unstable/hms-build-workflow-dispatcher:0.0.1-20220615205225.e6f6100
+      env:
+        GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+
+
