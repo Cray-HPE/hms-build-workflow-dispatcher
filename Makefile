@@ -6,5 +6,5 @@ all: image
 #todo fix this target thing!
 
 image:
-	docker build --pull ${DOCKER_ARGS} --tag '${NAME}:${VERSION}' --target builder .
+	docker build --pull ${DOCKER_ARGS} --tag '${NAME}:${VERSION}' .
 

@@ -31,9 +31,13 @@ RUN set -ex \
     && apk -U upgrade \
     && apk add --no-cache \
         python3 \
+        python3-dev \
+        libffi-dev \
         py3-pip \
         bash \
-        tar
+        tar \
+        build-base \
+        git
 
 COPY requirements.txt .
 
