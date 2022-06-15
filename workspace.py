@@ -72,8 +72,15 @@ if __name__ == '__main__':
     github_username = data["github"]["username"]
     github_token = data["github"]["token"]
 
-    with open('configuration.json', 'r') as file:
-        config = json.load(file)
+    # with open('configuration.json', 'r') as file:
+    #     config = json.load(file)
+
+    with open("configuration.yaml") as stream:
+        try:
+            config = yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            logging.error(exc)
+            exit(1)
 
     g = Github(github_token)
 
@@ -82,7 +89,7 @@ if __name__ == '__main__':
     ####################
     logging.info("retrieve manifest repo")
 
-    csm = config["manifest-repo"]
+    csm = config["configuration"]["manifest-repo"]
     csm_repo_metadata = g.get_organization("Cray-HPE").get_repo(csm)
     csm_dir = csm
     # Clean up in case it exsts
@@ -98,11 +105,11 @@ if __name__ == '__main__':
     logging.info("find docker images")
 
     docker_image_tuples = []
-    for branch in config["targeted-csm-branches"]:
+    for branch in config["configuration"]["targeted-csm-branches"]:
         csm_repo.git.checkout(branch)
 
         # load the docker index file
-        docker_index = os.path.join(csm_dir, config["docker-image-manifest"])
+        docker_index = os.path.join(csm_dir, config["configuration"]["docker-image-manifest"])
         with open(docker_index) as stream:
             try:
                 manifest = yaml.safe_load(stream)
@@ -110,7 +117,7 @@ if __name__ == '__main__':
                 logging.error(exc)
                 exit(1)
 
-        docker_compare = os.path.join(config["docker-image-compare"])
+        docker_compare = os.path.join(config["configuration"]["docker-image-compare"])
         with open(docker_compare) as stream:
             try:
                 compare = yaml.safe_load(stream)
@@ -183,7 +190,7 @@ if __name__ == '__main__':
         helm_lookup = json.load(file)
     logging.info("find helm charts")
 
-    for branch in config["targeted-csm-branches"]:
+    for branch in config["configuration"]["targeted-csm-branches"]:
         csm_repo.git.checkout(branch)
 
         # its possible the same helm chart is referenced multiple times, so we should collapse the list
@@ -193,7 +200,7 @@ if __name__ == '__main__':
         # Ive added the helm-lookup file because its a bunch of 'black magic' how the CSM repo knows where to download charts from
         # the hms-hmcollector is the exception that broke the rule, so a lookup is needed.
 
-        helm_files = glob.glob(os.path.join(csm_dir, config["helm-manifest-directory"]) + "/*.yaml")
+        helm_files = glob.glob(os.path.join(csm_dir, config["configuration"]["helm-manifest-directory"]) + "/*.yaml")
         for helm_file in helm_files:
             with open(helm_file) as stream:
                 try:
@@ -205,7 +212,7 @@ if __name__ == '__main__':
             for chart in manifest["spec"]["sources"]["charts"]:
                 upstream_sources[chart["name"]] = chart["location"]
             for chart in manifest["spec"]["charts"]:
-                if re.search(config["target-chart-regex"], chart["name"]) is not None:
+                if re.search(config["configuration"]["target-chart-regex"], chart["name"]) is not None:
                     # TODO this is happy path only, im ignoring any mis-lookups; need to fix it!
                     for repo in helm_lookup:
                         if repo["chart"] == chart["name"]:

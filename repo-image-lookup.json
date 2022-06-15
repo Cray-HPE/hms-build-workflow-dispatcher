@@ -1,5 +1,4 @@
 [
-    {"repo":"hms-pytest", "image":"hms-pytest"},
     {"repo":"hms-shcd-parser", "image":"hms-shcd-parser"},
     {"repo":"hms-trs-worker-http-v1", "image":"hms-trs-worker-http-v1"}
 ]

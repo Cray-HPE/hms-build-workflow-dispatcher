@@ -1,0 +1,83 @@
+{
+  "heml-repo-lookup": [
+    {
+      "chart": "cray-hms-bss",
+      "path": "stable/cray-hms-bss"
+    },
+    {
+      "chart": "cray-hms-capmc",
+      "path": "stable/cray-hms-capmc"
+    },
+    {
+      "chart": "cray-hms-discovery",
+      "path": "stable/cray-hms-discovery"
+    },
+    {
+      "chart": "cray-hms-firmware-action",
+      "path": "stable/cray-hms-firmware-action"
+    },
+    {
+      "chart": "cray-hms-hbtd",
+      "path": "stable/cray-hms-hbtd"
+    },
+    {
+      "chart": "cray-hms-hmnfd",
+      "path": "stable/cray-hms-hmnfd"
+    },
+    {
+      "chart": "cray-hms-meds",
+      "path": "stable/cray-hms-meds"
+    },
+    {
+      "chart": "cray-hms-reds",
+      "path": "stable/cray-hms-reds"
+    },
+    {
+      "chart": "cray-hms-rts",
+      "path": "stable/cray-hms-rts"
+    },
+    {
+      "chart": "cray-hms-scsd",
+      "path": "stable/cray-hms-scsd"
+    },
+    {
+      "chart": "cray-hms-sls",
+      "path": "stable/cray-hms-sls"
+    },
+    {
+      "chart": "cray-hms-smd",
+      "path": "stable/cray-hms-smd"
+    },
+    {
+      "chart": "cray-hms-trs-operator",
+      "path": "stable/cray-hms-trs-operator"
+    },
+    {
+      "chart": "cray-hms-hmcollector",
+      "path": "stable/hms-hmcollector"
+    }
+  ],
+  "repo-image-lookup": [
+    {
+      "repo": "hms-shcd-parser",
+      "image": "hms-shcd-parser"
+    },
+    {
+      "repo": "hms-trs-worker-http-v1",
+      "image": "hms-trs-worker-http-v1"
+    }
+  ],
+  "configuration": {
+    "manifest-repo": "csm",
+    "targeted-csm-branches": [
+      "main"
+    ],
+    "docker-image-manifest": "docker/index.yaml",
+    "docker-image-compare": "docker-index-compare.yaml",
+    "helm-manifest-directory": "manifests",
+    "target-chart-regex": "cray-hms-.*",
+    "sleep-duration-seconds": 5,
+    "time-limit-minutes": 10,
+    "webhook-sleep-seconds": 10
+  }
+}
