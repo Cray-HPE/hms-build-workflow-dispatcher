@@ -191,6 +191,9 @@ if __name__ == '__main__':
 
         # its possible the same helm chart is referenced multiple times, so we should collapse the list
         # TODO its al so possible that a docker-image override is specified, we HAVE TO check for that!
+            # values
+            #    global:
+            #        appVersion: 2.1.0
         # example download link: https://artifactory.algol60.net/artifactory/csm-helm-charts/stable/cray-hms-bss/cray-hms-bss-2.0.4.tgz
         # Ive added the helm-lookup struct because its a bunch of 'black magic' how the CSM repo knows where to download charts from
         # the hms-hmcollector is the exception that broke the rule, so a lookup is needed.
@@ -324,7 +327,7 @@ if __name__ == '__main__':
 
     desired_workflow_names = ["Build and Publish Service Docker Images", "Build and Publish Docker Images",
                               "Build and Publish CT Docker Images"]
-    # Todo what about the hms-test repo workflow? Build and Publish hms-test ...
+    # Todo what about the hms-test repo workflow? Build and Publish hms-test ... for now we will ignore it.
 
     for repo_name, val in images_to_rebuild.items():
         images = images_to_rebuild[repo_name]  # im going to be writing back to this
