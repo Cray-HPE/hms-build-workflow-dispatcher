@@ -45,7 +45,7 @@ RUN pip3 install -r requirements.txt
 
 FROM builder as installer
 
-COPY workspace.py /usr/bin/workspace.py
+COPY dispatcher.py /usr/bin/dispatcher.py
 COPY entrypoint.sh /src/app/entrypoint.sh
 COPY configuration.yaml /src/app/configuration.yaml
 
