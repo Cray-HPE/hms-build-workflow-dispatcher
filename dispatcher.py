@@ -1,23 +1,46 @@
 #!/usr/bin/env python3
-import os
-from github import Github
-from git import Repo
-import tempfile
-import shutil
-import yaml
-from deepdiff import DeepDiff
-import json
+
+# MIT License
+#
+# (C) Copyright [2022] Hewlett Packard Enterprise Development LP
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
+
+import collections
+import copy
+from datetime import datetime, timedelta
 import glob
+import json
+import logging
+import os
 import re
-from urllib.parse import urljoin
-import requests
+import shutil
 import tarfile
 import time
+from urllib.parse import urljoin
 
+from deepdiff import DeepDiff
+from git import Repo
+from github import Github
+import requests
+import yaml
 
-# This is very procedural oriented code. I haven't split much of this into function calls, because I think the whole
-# process will be ~500 lines of code.  TODO This could withstand some clean up, but encapsulation in methods in this case won't
-# lend to reusability, just organization (which is still a valid reason).
 
 def GetDockerImageFromDiff(value, tag):
     # example: root['artifactory.algol60.net/csm-docker/stable']['images']['hms-trs-worker-http-v1'][0]
@@ -41,25 +64,37 @@ if __name__ == '__main__':
     ####################
     # Load Configuration
     ####################
-    print("load configuration")
-    with open('credentials.json', 'r') as file:
-        data = json.load(file)
-    github_username = data["github"]["username"]
-    github_token = data["github"]["token"]
 
-    with open('configuration.json', 'r') as file:
-        config = json.load(file)
+    # with open('credentials.json', 'r') as file:
+    #     data = json.load(file)
+    # github_username = data["github"]["username"]
+    # github_token = data["github"]["token"]
+
+    github_token = os.getenv("GITHUB_TOKEN")
+
+    with open("configuration.yaml") as stream:
+        try:
+            config = yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            logging.error(exc)
+            exit(1)
 
     g = Github(github_token)
 
+    sleep_duration = os.getenv('SLEEP_DURATION_SECONDS', config["configuration"]["sleep-duration-seconds"])
+    expiration_minutes = os.getenv('TIME_LIMIT_MINUTES', config["configuration"]["time-limit-minutes"])
+    webhook_sleep_seconds = os.getenv('WEBHOOK_SLEEP_SECONDS', config["configuration"]["webhook-sleep-seconds"])
+    log_level = os.getenv('LOG_LEVEL', config["configuration"]["log-level"])
 
+    logging.basicConfig(level=log_level)
+    logging.info("load configuration")
 
     ####################
     # Download the CSM repo
     ####################
-    print("retrieve manifest repo")
+    logging.info("retrieve manifest repo")
 
-    csm = config["manifest-repo"]
+    csm = config["configuration"]["manifest-repo"]
     csm_repo_metadata = g.get_organization("Cray-HPE").get_repo(csm)
     csm_dir = csm
     # Clean up in case it exsts
@@ -72,51 +107,45 @@ if __name__ == '__main__':
     ####################
     # Go Get LIST of Docker Images we need to investigate!
     ####################
-    print("find docker images")
+    logging.info("find docker images")
 
     docker_image_tuples = []
-    for branch in config["targeted-csm-branches"]:
+    for branch in config["configuration"]["targeted-csm-branches"]:
         csm_repo.git.checkout(branch)
 
         # load the docker index file
-        docker_index = os.path.join(csm_dir, config["docker-image-manifest"])
+        docker_index = os.path.join(csm_dir, config["configuration"]["docker-image-manifest"])
         with open(docker_index) as stream:
             try:
                 manifest = yaml.safe_load(stream)
             except yaml.YAMLError as exc:
-                print(exc)
+                logging.error(exc)
                 exit(1)
 
-        docker_compare = os.path.join(config["docker-image-compare"])
-        with open(docker_compare) as stream:
-            try:
-                compare = yaml.safe_load(stream)
-            except yaml.YAMLError as exc:
-                print(exc)
-                exit(1)
+        compare = config["docker-image-compare"]
 
-        ############################
-        # THis is some brittle logic!
-        ############################
-        # This ASSUMES that the docker/index.yaml file has no key depth greater than 3!
-        # This ASSUMES that all images are in artifactory.algol60.net/csm-docker/stable
-        # , it assume that '[' or ']' is part of the library, and NOT part of a legit value.
-        # compare the two dictionaries, get the changed values only.  Since the compare file has 'find_me' baked into all
-        # the values I care about, it should make it easier to find the actual image tags.
-        # perhaps there is some easier way to do this. or cleaner? Maybe I should have just used YQ and hard coded a lookup list
-        # I think it will be easier, cleaner if I provide a manual lookup between the image name and the repo in github.com\Cray-HPE;
-        # otherwise id have to do a docker inspect of some sort, which seems like a LOT of work
+    ############################
+    # THis is some brittle logic!
+    ############################
+    # This ASSUMES that the docker/index.yaml file has no key depth greater than 3!
+    # This ASSUMES that all images are in artifactory.algol60.net/csm-docker/stable
+    # , it assume that '[' or ']' is part of the library, and NOT part of a legit value.
+    # compare the two dictionaries, get the changed values only.  Since the compare file has 'find_me' baked into all
+    # the values I care about, it should make it easier to find the actual image tags.
+    # perhaps there is some easier way to do this. or cleaner? Maybe I should have just used YQ and hard coded a lookup list
+    # I think it will be easier, cleaner if I provide a manual lookup between the image name and the repo in github.com\Cray-HPE;
+    # otherwise id have to do a docker inspect of some sort, which seems like a LOT of work
 
-        ddiff = DeepDiff(compare, manifest)
-        changed = ddiff["values_changed"]
-        for k, v in changed.items():
-            path_to_digest = k
-            image_tag = v["new_value"]
+    ddiff = DeepDiff(compare, manifest)
+    changed = ddiff["values_changed"]
+    for k, v in changed.items():
+        path_to_digest = k
+        image_tag = v["new_value"]
 
-            full_docker_image_name = GetDockerImageFromDiff(k, image_tag)
-            docker_image_to_rebuild = FindImagePart(k)
-            docker_image_tuple = (full_docker_image_name, docker_image_to_rebuild, image_tag)
-            docker_image_tuples.append(docker_image_tuple)
+        full_docker_image_name = GetDockerImageFromDiff(k, image_tag)
+        docker_image_to_rebuild = FindImagePart(k)
+        docker_image_tuple = (full_docker_image_name, docker_image_to_rebuild, image_tag)
+        docker_image_tuples.append(docker_image_tuple)
 
     # Reshape the data
     docker_image_tuples = list(set(docker_image_tuples))
@@ -137,10 +166,8 @@ if __name__ == '__main__':
         # data["images"].append(datum)
         # images_to_rebuild[image_name] = data
 
-    # add in the repo information
-    with open('repo-image-lookup.json', 'r') as file:
-        repo_lookup = json.load(file)
-    print("cross reference docker images with lookup")
+    repo_lookup = config["repo-image-lookup"]
+    logging.info("cross reference docker images with lookup")
     for repo in repo_lookup:
         for image in images:
             if repo["image"] == image["short-name"]:
@@ -156,33 +183,34 @@ if __name__ == '__main__':
     # Start to process helm charts
     ####################
     charts_to_download = []
-    with open('helm-lookup.json', 'r') as file:
-        helm_lookup = json.load(file)
-    print("find helm charts")
+    helm_lookup = config["helm-repo-lookup"]
+    logging.info("find helm charts")
 
-    for branch in config["targeted-csm-branches"]:
+    for branch in config["configuration"]["targeted-csm-branches"]:
         csm_repo.git.checkout(branch)
 
         # its possible the same helm chart is referenced multiple times, so we should collapse the list
         # TODO its al so possible that a docker-image override is specified, we HAVE TO check for that!
+            # values
+            #    global:
+            #        appVersion: 2.1.0
         # example download link: https://artifactory.algol60.net/artifactory/csm-helm-charts/stable/cray-hms-bss/cray-hms-bss-2.0.4.tgz
-        # TODO will helm charts always be in stable?
-        # Ive added the helm-lookup file because its a bunch of 'black magic' how the CSM repo knows where to download charts from
+        # Ive added the helm-lookup struct because its a bunch of 'black magic' how the CSM repo knows where to download charts from
         # the hms-hmcollector is the exception that broke the rule, so a lookup is needed.
 
-        helm_files = glob.glob(os.path.join(csm_dir, config["helm-manifest-directory"]) + "/*.yaml")
+        helm_files = glob.glob(os.path.join(csm_dir, config["configuration"]["helm-manifest-directory"]) + "/*.yaml")
         for helm_file in helm_files:
             with open(helm_file) as stream:
                 try:
                     manifest = yaml.safe_load(stream)
                 except yaml.YAMLError as exc:
-                    print(exc)
+                    logging.error(exc)
                     exit(1)
             upstream_sources = {}
             for chart in manifest["spec"]["sources"]["charts"]:
                 upstream_sources[chart["name"]] = chart["location"]
             for chart in manifest["spec"]["charts"]:
-                if re.search(config["target-chart-regex"], chart["name"]) is not None:
+                if re.search(config["configuration"]["target-chart-regex"], chart["name"]) is not None:
                     # TODO this is happy path only, im ignoring any mis-lookups; need to fix it!
                     for repo in helm_lookup:
                         if repo["chart"] == chart["name"]:
@@ -201,7 +229,7 @@ if __name__ == '__main__':
         shutil.rmtree(helm_dir)
 
     os.mkdir(helm_dir)
-    print("download helm charts")
+    logging.info("download helm charts")
 
     for chart in charts_to_download:
         r = requests.get(chart, stream=True)
@@ -221,7 +249,7 @@ if __name__ == '__main__':
         file.extractall(os.path.join(helm_dir, folder_name))
         file.close()
 
-    print("process helm charts")
+    logging.info("process helm charts")
     # the structure is well known: {helm-chart}-version/{helm-chart}/all-the-goodness-we-want
     for file in os.listdir(helm_dir):
         helm_chart_dir = os.path.join(helm_dir, file)
@@ -233,14 +261,14 @@ if __name__ == '__main__':
                         try:
                             chart = yaml.safe_load(stream)
                         except yaml.YAMLError as exc:
-                            print(exc)
-                            exit(1)  # todo need to do something else
+                            logging.error(exc)
+                            exit(1)
                     with open(os.path.join(chart_dir, "values.yaml")) as stream:
                         try:
                             values = yaml.safe_load(stream)
                         except yaml.YAMLError as exc:
-                            print(exc)
-                            exit(1)  # todo need to do something else
+                            logging.error(exc)
+                            exit(1)
                     # Do Some stuff with this chart info
                     # THIS ASSUMES there is only one source and its the 0th one that we care about. I believe this is true for HMS
                     source = chart["sources"][0]
@@ -295,11 +323,11 @@ if __name__ == '__main__':
     #################
     # Launch Rebuilds
     #################
-    print("attempting to launch workflows")
+    logging.info("attempting to identify workflows")
 
     desired_workflow_names = ["Build and Publish Service Docker Images", "Build and Publish Docker Images",
-                              "Build and Publish CT Docker Images"] #Todo what about the hms-test repo workflow? Build and Publish hms-test ...
-
+                              "Build and Publish CT Docker Images"]
+    # Todo what about the hms-test repo workflow? Build and Publish hms-test ... for now we will ignore it.
 
     for repo_name, val in images_to_rebuild.items():
         images = images_to_rebuild[repo_name]  # im going to be writing back to this
@@ -334,26 +362,23 @@ if __name__ == '__main__':
             for available_workflow in available_workflows:
                 wf = {}
                 if is_test is not None and available_workflow.name == "Build and Publish CT Docker Images":  # this is a test image and the CT image workflow
-                    #launched = available_workflow.create_dispatch(git_tag)
+                    # launched = available_workflow.create_dispatch(git_tag)
                     wf = available_workflow
                     image["workflow"] = wf
                 elif is_test is None and available_workflow.name != "Build and Publish CT Docker Images":  # this is NOT a test, and we are NOT using the CT image workflow
-                    #launched = available_workflow.create_dispatch(git_tag)
+                    # launched = available_workflow.create_dispatch(git_tag)
                     wf = available_workflow
                     image["workflow"] = wf
             image["git-tag"] = git_tag
-            #image["workflow-initiated"] = launched
+            # image["workflow-initiated"] = launched
 
-
-    print(images_to_rebuild)
-
-    #todo I need to somehow figure out what the ID is for each run and keep checking up on it.
     # This is ugly, but Github is stupid and refuses to return an ID for a create-dispatch
     # https://stackoverflow.com/questions/69479400/get-run-id-after-triggering-a-github-workflow-dispatch-event
     # https://github.com/github-community/community/discussions/9752
+    logging.info("attempting to launch workflows")
 
-    #Go get the runs
-    for k,v in images_to_rebuild.items():
+    # Go get the runs
+    for k, v in images_to_rebuild.items():
         images = images_to_rebuild[k]
         for image in images:
             workflow = image["workflow"]
@@ -362,37 +387,117 @@ if __name__ == '__main__':
                 image["pre-runs"].append(run)
             image["workflow-initiated"] = image["workflow"].create_dispatch(image["git-tag"])
 
+    # wait X seconds since github actions are launched on a web-hook; this might not be enough time
+    time.sleep(webhook_sleep_seconds)
 
-    time.sleep(5)
-    #wait 5 seconds since github actions are launched on a web-hook; this might not be enough time
+    logging.info("attempting to find launched workflows")
+
     # Go get the runs
     for k, v in images_to_rebuild.items():
         images = images_to_rebuild[k]
         for image in images:
             workflow = image["workflow"]
             image["post-runs"] = []
-            if image["workflow-initiated"] :
+            if image["workflow-initiated"]:
                 for run in workflow.get_runs(event="workflow_dispatch", branch=image["git-tag"]):
                     image["post-runs"].append(run)
 
-
-    #now collate
+    # now collate
+    targeted_workflows = []
     for k, v in images_to_rebuild.items():
         images = images_to_rebuild[k]
         for image in images:
-            pre = image["pre-runs"]
-            post = image["post-runs"]
+            pre = []
+            post = []
+            image["targeted-workflows"] = []
+
+            for p in image["pre-runs"]:
+                pre.append(p.id)
+            for p in image["post-runs"]:
+                post.append(p.id)
 
             diff = list(set(post) - set(pre))
-            image["diff"] = diff
+            image["targeted-runs"] = diff
+
+            for p in image["post-runs"]:
+                if p.id in diff:
+                    image["targeted-workflows"].append(p)
+                    targeted_workflows.append(p)
+
+    # Im tired of traversing the whole dictionary - and then asking about all workflows...
+    # Im going to use the targeted_workflows list and just use the API, because there is a lacking PyGithub interface for what I need.
+    # I dont see it in the list: https://pygithub.readthedocs.io/en/latest/github_objects.html
+
+    complete = False
+    expiration_time = datetime.now() + timedelta(minutes=expiration_minutes)
+    last_request = {}
+
+
+    while not complete or expiration_time < datetime.now():
+
+        complete = True
+        status = []
+        for t in targeted_workflows:
+
+            query_url = t.url
+            headers = {'Authorization': f'token {github_token}'}
+            r = requests.get(query_url, headers=headers)
+            data = json.loads(r.text)
+            last_request[t.id] = data
+            if r.status_code == 200:
+                status.append(data["status"])
+
+        occurrences = collections.Counter(status)
+        if occurrences["completed"] != len(targeted_workflows):
+            complete = False
+        logging.info("waiting for completion\t" + str(occurrences) + "\t sleeping " + str(sleep_duration) + " seconds")
+        time.sleep(sleep_duration)
+
+    conclusion = []
+    temp = []
+    for key, val in last_request.items():
+        conclusion.append(val["conclusion"])
+
+    conclusion_disposition = collections.Counter(conclusion)
+    summary = {}
+    summary["summary"] = conclusion_disposition
+
+    rebuilt_images = copy.deepcopy(images_to_rebuild)
+    # make a copy of the dictionary and clean it up, so I can JSON dump it.
+    for k, v in rebuilt_images.items():
+        images = rebuilt_images[k]
+        for image in images:
+
+            image["executions"] = []
+            for tr in image["targeted-runs"]:
+                if tr in last_request:
+                    datum = last_request[tr]
+                    data = {}
+                    data["job-id"] = datum["id"]
+                    data["job-status"] = datum["status"]
+                    data["job-conclusion"] = datum["conclusion"]
+                    data["job-url"] = datum["url"]
+                    data["job-html-url"] = datum["html_url"]
+                    data["workflow-url"] = image["workflow"].url
+                    data["workflow-name"] = image["workflow"].name
+
+                    image["executions"].append(data)
 
             image.pop("pre-runs", None)
             image.pop("post-runs", None)
+            image.pop("monitor-runs", None)
+            image.pop("diff", None)
+            image.pop("workflow-initiated", None)
+            image.pop("targeted-runs", None)
+            image.pop("targeted-workflows", None)
+            image.pop("workflow", None)
 
-            # found = False
-            # for po in post:
-            #     for pr in pre:
-            #         if po.id == pr.id:
-            #             image["workflow-run-id"] = po.id
+    logging.info(json.dumps(rebuilt_images, indent=2))
+    logging.info(summary)
 
-    print(images_to_rebuild)
+    if conclusion_disposition["success"] != len(targeted_workflows):
+        logging.error("some workflows did not report success")
+        exit(1)
+    logging.info("all workflows successfully completed")
+    exit(0)
+
