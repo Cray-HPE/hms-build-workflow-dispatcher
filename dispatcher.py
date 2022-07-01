@@ -186,12 +186,10 @@ if __name__ == '__main__':
     helm_lookup = config["helm-repo-lookup"]
     logging.info("find helm charts")
 
-    manifest_values_overrides = {} # manifest_values_overrides[CSM_BRANCH][CHART]
+    all_charts = {}
     for branch in config["configuration"]["targeted-csm-branches"]:
         logging.info("Checking out CSM branch {}".format(branch))
         csm_repo.git.checkout(branch)
-
-        manifest_values_overrides[branch] = {}
         
         # its possible the same helm chart is referenced multiple times, so we should collapse the list
         # example download link: https://artifactory.algol60.net/artifactory/csm-helm-charts/stable/cray-hms-bss/cray-hms-bss-2.0.4.tgz
@@ -214,29 +212,44 @@ if __name__ == '__main__':
             for chart in manifest["spec"]["sources"]["charts"]:
                 upstream_sources[chart["name"]] = chart["location"]
             for chart in manifest["spec"]["charts"]:
+                chart_name = chart["name"]
+                chart_version = chart["version"]
                 if re.search(config["configuration"]["target-chart-regex"], chart["name"]) is not None:
                     # TODO this is happy path only, im ignoring any mis-lookups; need to fix it!
+                    # TODO We are also ignore unlikely situations where different CSM releases pull the same helm chart version from different locations.
+                    download_url = None
                     for repo in helm_lookup:
                         if repo["chart"] == chart["name"]:
-                            charts_to_download.append(urljoin(upstream_sources[chart["source"]],
-                                                              os.path.join(repo["path"], chart["name"] + "-" + str(
-                                                                  chart["version"]) + ".tgz")))
+                            download_url = urljoin(upstream_sources[chart["source"]],
+                                                              os.path.join(repo["path"], chart_name + "-" + str(
+                                                                  chart_version) + ".tgz"))
 
                     # Save chart overrides
                     # ASSUMPTION: It is being assumed that a HMS helm chart will be referenced only once in all loftsman manifests for any
                     # CSM release. The following logic will need to change, if we every decide to deploy the same helm chart multiple times
-                    # with different release names.
-                    if chart["name"] in manifest_values_overrides[branch]:
-                        logging.error("The chart {} is referenced multiple times in a CSM release".format(chart["name"]))
-                        exit(1)
-                    
+                    # with different release names.                   
+                    if chart_name not in all_charts:
+                        all_charts[chart_name] = {}
+                    if chart_version not in all_charts[chart_name]:
+                        all_charts[chart_name][chart_version] = {}
+                        all_charts[chart_name][chart_version]["csm-releases"] = {} 
+                        all_charts[chart_name][chart_version]["download-url"] = download_url
+    
+                    all_charts[chart_name][chart_version]["csm-releases"][branch] = {}
                     if "values" in chart:
-                        manifest_values_overrides[branch][chart["name"]] = chart["values"]
+                        all_charts[chart_name][chart_version]["csm-releases"][branch]["values"] = chart["values"]
 
+    # The following is really ugly, but prints out a nice summary of the chart overrides across all of the CSM branches this script it is looking at.
+    # This looks ugly, as I'm preferring to make the helm templating process later in this script nicer.
+    logging.info("Manifest value overrides")
+    manifest_values_overrides = {}
+    for branch in config["configuration"]["targeted-csm-branches"]:
+        manifest_values_overrides[branch] = {}
 
-    charts_to_download = sorted(list(set(charts_to_download)))
-
-    logging.info("Manifest value overrides:")
+        for chart_name, versions in all_charts.items():
+            for version_information in versions.values():
+                if branch in version_information["csm-releases"] and "values" in version_information["csm-releases"][branch]:
+                    manifest_values_overrides[branch][chart_name] = version_information["csm-releases"][branch]["values"]
     print(yaml.dump(manifest_values_overrides))
 
     ######
@@ -250,6 +263,11 @@ if __name__ == '__main__':
 
     os.mkdir(helm_dir)
     logging.info("download helm charts")
+    
+    # Extract all of the download links from the charts.
+    charts_to_download = []
+    for chart in all_charts.values():
+        charts_to_download.extend(list(map(lambda e: chart[e]["download-url"], chart)))
 
     for chart in charts_to_download:
         r = requests.get(chart, stream=True)
@@ -324,9 +342,9 @@ if __name__ == '__main__':
                         logging.info("\t- {}".format(image_repo))
 
                     # Now template the Helm chart to learn the image tags
-                    for branch in config["configuration"]["targeted-csm-branches"]:
+                    for branch in all_charts[chart["name"]][chart["version"]]["csm-releases"]:
                         logging.info("\tCSM Branch {}".format(branch))
-                        chart_value_overrides = manifest_values_overrides[branch].get(chart["name"])
+                        chart_value_overrides = all_charts[chart["name"]][chart["version"]]["csm-releases"][branch].get("values")
                         
                         # Write out value overrides
                         values_override_path = os.path.join(helm_chart_dir, "values-{}.yaml".format(branch.replace("/", "-")))
