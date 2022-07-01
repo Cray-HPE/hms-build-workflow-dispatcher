@@ -39,6 +39,16 @@ RUN set -ex \
         build-base \
         git
 
+ARG HELM_VERSION=v3.9.0
+RUN set -eux \
+    && mkdir /tmp/helm \
+    && cd /tmp/helm \
+    && wget -q https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz -O ./helm.tar.gz \
+    && tar -xvf ./helm.tar.gz \
+    && mv ./linux-amd64/helm /usr/local/bin/helm \
+    && chmod +x /usr/local/bin/helm \
+    && rm -rv /tmp/helm
+
 COPY requirements.txt .
 RUN pip3 install --upgrade pip
 RUN pip3 install -r requirements.txt
@@ -47,6 +57,7 @@ FROM builder as installer
 
 COPY dispatcher.py /usr/bin/dispatcher.py
 COPY entrypoint.sh /src/app/entrypoint.sh
+COPY extract_chart_images.sh /src/app/extract_chart_images.sh
 COPY configuration.yaml /src/app/configuration.yaml
 
 ## Run as nobody

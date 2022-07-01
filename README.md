@@ -32,7 +32,7 @@ The workflow dispatcher is an infrastructure as code solution to dispatching git
 
 The workflow is configured to execute:
 
-```
+```yaml
 on:
   workflow_dispatch:
   pull_request:
@@ -52,7 +52,20 @@ Can be loaded (along with configuration.yaml) into a jupyter environment and exe
 
 Requires a [GITHUB_TOKEN](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)
 
+### `hms-build-workflow-dispatcher` - locally built docker image
 
+```bash
+export GITHUB_TOKEN=ghp.....
+make; docker run --rm -it -e GITHUB_TOKEN hms-build-workflow-dispatcher:$(cat .version)
+```
+
+Perform a dry run:
+```
+export GITHUB_TOKEN=ghp.....
+make; docker run --rm -it -e GITHUB_TOKEN -e DRYRUN=true hms-build-workflow-dispatcher:$(cat .version)
+```
+
+Requires a [GITHUB_TOKEN](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)
 
 ## Program Flow
 

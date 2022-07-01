@@ -40,7 +40,7 @@ from git import Repo
 from github import Github
 import requests
 import yaml
-
+import subprocess
 
 def GetDockerImageFromDiff(value, tag):
     # example: root['artifactory.algol60.net/csm-docker/stable']['images']['hms-trs-worker-http-v1'][0]
@@ -65,11 +65,6 @@ if __name__ == '__main__':
     # Load Configuration
     ####################
 
-    # with open('credentials.json', 'r') as file:
-    #     data = json.load(file)
-    # github_username = data["github"]["username"]
-    # github_token = data["github"]["token"]
-
     github_token = os.getenv("GITHUB_TOKEN")
 
     with open("configuration.yaml") as stream:
@@ -88,6 +83,11 @@ if __name__ == '__main__':
 
     logging.basicConfig(level=log_level)
     logging.info("load configuration")
+
+    dry_run = False
+    if os.getenv("DRYRUN", "false").lower() == "true":
+        logging.info("Performing a dry run!")
+        dry_run = True
 
     ####################
     # Download the CSM repo
@@ -186,26 +186,30 @@ if __name__ == '__main__':
     helm_lookup = config["helm-repo-lookup"]
     logging.info("find helm charts")
 
+    manifest_values_overrides = {} # manifest_values_overrides[CSM_BRANCH][CHART]
     for branch in config["configuration"]["targeted-csm-branches"]:
+        logging.info("Checking out CSM branch {}".format(branch))
         csm_repo.git.checkout(branch)
 
+        manifest_values_overrides[branch] = {}
+        
         # its possible the same helm chart is referenced multiple times, so we should collapse the list
-        # TODO its al so possible that a docker-image override is specified, we HAVE TO check for that!
-            # values
-            #    global:
-            #        appVersion: 2.1.0
         # example download link: https://artifactory.algol60.net/artifactory/csm-helm-charts/stable/cray-hms-bss/cray-hms-bss-2.0.4.tgz
         # Ive added the helm-lookup struct because its a bunch of 'black magic' how the CSM repo knows where to download charts from
         # the hms-hmcollector is the exception that broke the rule, so a lookup is needed.
 
         helm_files = glob.glob(os.path.join(csm_dir, config["configuration"]["helm-manifest-directory"]) + "/*.yaml")
         for helm_file in helm_files:
+            logging.info("Processing manifest {}".format(helm_file))
             with open(helm_file) as stream:
                 try:
                     manifest = yaml.safe_load(stream)
                 except yaml.YAMLError as exc:
-                    logging.error(exc)
-                    exit(1)
+                    logging.error("Failed to parse manifest {}, error: {}".format(helm_file, exc))
+                    # If there is malformed manifest in the CSM manifest, then this entire workflow will fail.
+                    # Instead we should make a best effort attempt at rebuilding images, but we should exist an non-zero exit code
+                    # to signal that not all images were rebuilt.
+                    continue
             upstream_sources = {}
             for chart in manifest["spec"]["sources"]["charts"]:
                 upstream_sources[chart["name"]] = chart["location"]
@@ -217,7 +221,23 @@ if __name__ == '__main__':
                             charts_to_download.append(urljoin(upstream_sources[chart["source"]],
                                                               os.path.join(repo["path"], chart["name"] + "-" + str(
                                                                   chart["version"]) + ".tgz")))
+
+                    # Save chart overrides
+                    # ASSUMPTION: It is being assumed that a HMS helm chart will be referenced only once in all loftsman manifests for any
+                    # CSM release. The following logic will need to change, if we every decide to deploy the same helm chart multiple times
+                    # with different release names.
+                    if chart["name"] in manifest_values_overrides[branch]:
+                        logging.error("The chart {} is referenced multiple times in a CSM release".format(chart["name"]))
+                        exit(1)
+                    
+                    if "values" in chart:
+                        manifest_values_overrides[branch][chart["name"]] = chart["values"]
+
+
     charts_to_download = sorted(list(set(charts_to_download)))
+
+    logging.info("Manifest value overrides:")
+    print(yaml.dump(manifest_values_overrides))
 
     ######
     # Go download helm charts and explore them
@@ -257,6 +277,7 @@ if __name__ == '__main__':
             for entry in os.listdir(helm_chart_dir):
                 chart_dir = os.path.join(helm_chart_dir, entry)
                 if os.path.isdir(chart_dir):
+                    logging.info("Processing chart: {}".format(chart_dir))
                     with open(os.path.join(chart_dir, "Chart.yaml")) as stream:
                         try:
                             chart = yaml.safe_load(stream)
@@ -272,7 +293,11 @@ if __name__ == '__main__':
                     # Do Some stuff with this chart info
                     # THIS ASSUMES there is only one source and its the 0th one that we care about. I believe this is true for HMS
                     source = chart["sources"][0]
-                    repo = source.split('/')[-1]
+                    github_repo = source.split('/')[-1]
+                    logging.info("\tGithub repo: {}".format(github_repo))
+
+                    if github_repo not in images_to_rebuild:
+                        images_to_rebuild[github_repo] = []
 
                     ## Assumed values.yaml structure
                     # global:
@@ -288,37 +313,50 @@ if __name__ == '__main__':
                     #  pullPolicy: IfNotPresent
                     ### Its possible that there might not be a 'tests' value, but I will handle that.
 
-                    main_image_tag = values["global"]["appVersion"]
-                    main_image = values["image"]["repository"]
-                    main_short_image = main_image.split('/')[-1]
-                    test_image_tag = None
-                    test_image = None
-                    test_short_image = None
+                    # Determine the names of the main application image, and the test image
+                    images_repos_of_interest = []
+                    images_repos_of_interest.append(values["image"]["repository"])
                     if "testVersion" in values["global"]:
-                        test_image_tag = values["global"]["testVersion"]
-                        test_image = values["tests"]["image"]["repository"]
-                        test_short_image = test_image.split('/')[-1]
+                        images_repos_of_interest.append(values["tests"]["image"]["repository"])
 
-                    images = []
-                    image = {}
-                    image["full-image"] = main_image
-                    image["short-name"] = main_short_image
-                    image["image-tag"] = main_image_tag
-                    images.append(image)
-                    if test_image is not None:
-                        image = {}
-                        image["full-image"] = test_image
-                        image["short-name"] = test_short_image
-                        image["image-tag"] = test_image_tag
-                        images.append(image)
+                    logging.info("\tImage repos of interest:")
+                    for image_repo in images_repos_of_interest:
+                        logging.info("\t- {}".format(image_repo))
 
-                    if repo in images_to_rebuild:
-                        repo_val = images_to_rebuild[repo]
-                        repo_val.extend(images)
-                        images_to_rebuild[repo] = repo_val
-                    else:
-                        images_to_rebuild[repo] = []
-                        images_to_rebuild[repo].extend(images)
+                    # Now template the Helm chart to learn the image tags
+                    for branch in config["configuration"]["targeted-csm-branches"]:
+                        logging.info("\tCSM Branch {}".format(branch))
+                        chart_value_overrides = manifest_values_overrides[branch].get(chart["name"])
+                        
+                        # Write out value overrides
+                        values_override_path = os.path.join(helm_chart_dir, "values-{}.yaml".format(branch.replace("/", "-")))
+                        logging.info("\t\tWriting out value overrides {}".format(values_override_path))
+                        with open(values_override_path, "w") as f:
+                            yaml.dump(chart_value_overrides, f)
+
+                        # TODO thought about inlining this script, but using shell=True can be dangerous.
+                        result = subprocess.run(["./extract_chart_images.sh", chart_dir, values_override_path], capture_output=True, text=True)
+                        if result.returncode != 0:
+                            logging.error("Failed to extract images from chart. Exit code {}".format(result.returncode))
+                            logging.error("stderr: {}".format(result.stderr))
+                            logging.error("stdout: {}".format(result.stdout))
+                            exit(1)
+
+                        logging.info("\t\tImages in use:")
+                        for image in result.stdout.splitlines():
+                            image_repo, image_tag = image.split(":", 2)
+
+                            if image_repo not in images_repos_of_interest:
+                                continue
+                            logging.info("\t\t- {}".format(image))
+
+                            # Add the image to the list to be rebuilt if this is a new image
+                            if image not in list(map(lambda e: e["full-image"], images_to_rebuild[github_repo])):
+                                images_to_rebuild[github_repo].append({
+                                    "full-image": image,
+                                    "short-name": image_repo.split('/')[-1],
+                                    "image-tag": image_tag,
+                                })
 
     #################
     # Launch Rebuilds
@@ -372,101 +410,114 @@ if __name__ == '__main__':
             image["git-tag"] = git_tag
             # image["workflow-initiated"] = launched
 
-    # This is ugly, but Github is stupid and refuses to return an ID for a create-dispatch
-    # https://stackoverflow.com/questions/69479400/get-run-id-after-triggering-a-github-workflow-dispatch-event
-    # https://github.com/github-community/community/discussions/9752
-    logging.info("attempting to launch workflows")
-
-    # Go get the runs
-    for k, v in images_to_rebuild.items():
-        images = images_to_rebuild[k]
-        for image in images:
-            workflow = image["workflow"]
-            image["pre-runs"] = []
-            for run in workflow.get_runs(event="workflow_dispatch", branch=image["git-tag"]):
-                image["pre-runs"].append(run)
-            image["workflow-initiated"] = image["workflow"].create_dispatch(image["git-tag"])
-
-    # wait X seconds since github actions are launched on a web-hook; this might not be enough time
-    time.sleep(webhook_sleep_seconds)
-
-    logging.info("attempting to find launched workflows")
-
-    # Go get the runs
-    for k, v in images_to_rebuild.items():
-        images = images_to_rebuild[k]
-        for image in images:
-            workflow = image["workflow"]
-            image["post-runs"] = []
-            if image["workflow-initiated"]:
-                for run in workflow.get_runs(event="workflow_dispatch", branch=image["git-tag"]):
-                    image["post-runs"].append(run)
-
-    # now collate
-    targeted_workflows = []
-    for k, v in images_to_rebuild.items():
-        images = images_to_rebuild[k]
-        for image in images:
-            pre = []
-            post = []
-            image["targeted-workflows"] = []
-
-            for p in image["pre-runs"]:
-                pre.append(p.id)
-            for p in image["post-runs"]:
-                post.append(p.id)
-
-            diff = list(set(post) - set(pre))
-            image["targeted-runs"] = diff
-
-            for p in image["post-runs"]:
-                if p.id in diff:
-                    image["targeted-workflows"].append(p)
-                    targeted_workflows.append(p)
-
-    # Im tired of traversing the whole dictionary - and then asking about all workflows...
-    # Im going to use the targeted_workflows list and just use the API, because there is a lacking PyGithub interface for what I need.
-    # I dont see it in the list: https://pygithub.readthedocs.io/en/latest/github_objects.html
-
-    complete = False
-    expiration_time = datetime.now() + timedelta(minutes=expiration_minutes)
-    last_request = {}
-
-
-    while not complete or expiration_time < datetime.now():
-
-        complete = True
-        status = []
-        for t in targeted_workflows:
-
-            query_url = t.url
-            headers = {'Authorization': f'token {github_token}'}
-            r = requests.get(query_url, headers=headers)
-            data = json.loads(r.text)
-            last_request[t.id] = data
-            if r.status_code == 200:
-                status.append(data["status"])
-
-        occurrences = collections.Counter(status)
-        if occurrences["completed"] != len(targeted_workflows):
-            complete = False
-        logging.info("waiting for completion\t" + str(occurrences) + "\t sleeping " + str(sleep_duration) + " seconds")
-        time.sleep(sleep_duration)
-
-    conclusion = []
-    temp = []
-    for key, val in last_request.items():
-        conclusion.append(val["conclusion"])
-
-    conclusion_disposition = collections.Counter(conclusion)
     summary = {}
-    summary["summary"] = conclusion_disposition
+    if not dry_run:
+        # This is ugly, but Github is stupid and refuses to return an ID for a create-dispatch
+        # https://stackoverflow.com/questions/69479400/get-run-id-after-triggering-a-github-workflow-dispatch-event
+        # https://github.com/github-community/community/discussions/9752
+        logging.info("attempting to launch workflows")
+
+        # Go get the runs
+        for k, v in images_to_rebuild.items():
+            images = images_to_rebuild[k]
+            for image in images:
+                workflow = image["workflow"]
+                image["pre-runs"] = []
+                for run in workflow.get_runs(event="workflow_dispatch", branch=image["git-tag"]):
+                    image["pre-runs"].append(run)
+                image["workflow-initiated"] = image["workflow"].create_dispatch(image["git-tag"])
+
+        # wait X seconds since github actions are launched on a web-hook; this might not be enough time
+        time.sleep(webhook_sleep_seconds)
+
+        logging.info("attempting to find launched workflows")
+
+        # Go get the runs
+        for k, v in images_to_rebuild.items():
+            images = images_to_rebuild[k]
+            for image in images:
+                workflow = image["workflow"]
+                image["post-runs"] = []
+                if image["workflow-initiated"]:
+                    for run in workflow.get_runs(event="workflow_dispatch", branch=image["git-tag"]):
+                        image["post-runs"].append(run)
+
+        # now collate
+        targeted_workflows = []
+        for k, v in images_to_rebuild.items():
+            images = images_to_rebuild[k]
+            for image in images:
+                pre = []
+                post = []
+                image["targeted-workflows"] = []
+
+                for p in image["pre-runs"]:
+                    pre.append(p.id)
+                for p in image["post-runs"]:
+                    post.append(p.id)
+
+                diff = list(set(post) - set(pre))
+                image["targeted-runs"] = diff
+
+                for p in image["post-runs"]:
+                    if p.id in diff:
+                        image["targeted-workflows"].append(p)
+                        targeted_workflows.append(p)
+
+        # Im tired of traversing the whole dictionary - and then asking about all workflows...
+        # Im going to use the targeted_workflows list and just use the API, because there is a lacking PyGithub interface for what I need.
+        # I dont see it in the list: https://pygithub.readthedocs.io/en/latest/github_objects.html
+
+        complete = False
+        expiration_time = datetime.now() + timedelta(minutes=expiration_minutes)
+        last_request = {}
+
+
+        while not complete or expiration_time < datetime.now():
+
+            complete = True
+            status = []
+            for t in targeted_workflows:
+
+                query_url = t.url
+                headers = {'Authorization': f'token {github_token}'}
+                r = requests.get(query_url, headers=headers)
+                data = json.loads(r.text)
+                last_request[t.id] = data
+                if r.status_code == 200:
+                    status.append(data["status"])
+
+            occurrences = collections.Counter(status)
+            if occurrences["completed"] != len(targeted_workflows):
+                complete = False
+            logging.info("waiting for completion\t" + str(occurrences) + "\t sleeping " + str(sleep_duration) + " seconds")
+            time.sleep(sleep_duration)
+
+        conclusion = []
+        temp = []
+        for key, val in last_request.items():
+            conclusion.append(val["conclusion"])
+
+        conclusion_disposition = collections.Counter(conclusion)
+        summary["summary"] = conclusion_disposition
 
     rebuilt_images = copy.deepcopy(images_to_rebuild)
     # make a copy of the dictionary and clean it up, so I can JSON dump it.
     for k, v in rebuilt_images.items():
         images = rebuilt_images[k]
         for image in images:
+
+            image.pop("pre-runs", None)
+            image.pop("post-runs", None)
+            image.pop("monitor-runs", None)
+            image.pop("diff", None)
+            image.pop("workflow-initiated", None)
+            image.pop("targeted-workflows", None)
+            image.pop("workflow", None)
+
+            # The data below is not generated for dry runs
+            if dry_run:
+                continue
 
             image["executions"] = []
             for tr in image["targeted-runs"]:
@@ -483,19 +534,13 @@ if __name__ == '__main__':
 
                     image["executions"].append(data)
 
-            image.pop("pre-runs", None)
-            image.pop("post-runs", None)
-            image.pop("monitor-runs", None)
-            image.pop("diff", None)
-            image.pop("workflow-initiated", None)
             image.pop("targeted-runs", None)
-            image.pop("targeted-workflows", None)
-            image.pop("workflow", None)
+
 
     logging.info(json.dumps(rebuilt_images, indent=2))
     logging.info(summary)
 
-    if conclusion_disposition["success"] != len(targeted_workflows):
+    if "summary" in summary and summary["summary"]["success"] != len(targeted_workflows):
         logging.error("some workflows did not report success")
         exit(1)
     logging.info("all workflows successfully completed")
