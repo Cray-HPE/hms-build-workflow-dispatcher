@@ -205,7 +205,7 @@ if __name__ == '__main__':
                 except yaml.YAMLError as exc:
                     logging.error("Failed to parse manifest {}, error: {}".format(helm_file, exc))
                     # If there is malformed manifest in the CSM manifest, then this entire workflow will fail.
-                    # Instead we should make a best effort attempt at rebuilding images, but we should exist an non-zero exit code
+                    # TODO Instead we should make a best effort attempt at rebuilding images, but we should exist an non-zero exit code
                     # to signal that not all images were rebuilt.
                     continue
             upstream_sources = {}
@@ -250,7 +250,7 @@ if __name__ == '__main__':
             for version_information in versions.values():
                 if branch in version_information["csm-releases"] and "values" in version_information["csm-releases"][branch]:
                     manifest_values_overrides[branch][chart_name] = version_information["csm-releases"][branch]["values"]
-    print(yaml.dump(manifest_values_overrides))
+    logging.info("\n"+yaml.dump(manifest_values_overrides))
 
     ######
     # Go download helm charts and explore them
@@ -531,10 +531,10 @@ if __name__ == '__main__':
             image.pop("diff", None)
             image.pop("workflow-initiated", None)
             image.pop("targeted-workflows", None)
-            image.pop("workflow", None)
 
             # The data below is not generated for dry runs
             if dry_run:
+                image.pop("workflow", None)
                 continue
 
             image["executions"] = []
@@ -552,6 +552,7 @@ if __name__ == '__main__':
 
                     image["executions"].append(data)
 
+            image.pop("workflow", None)
             image.pop("targeted-runs", None)
 
 
