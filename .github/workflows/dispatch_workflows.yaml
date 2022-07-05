@@ -27,7 +27,7 @@ jobs:
         uses: chuhlomin/render-template@v1.5
         with:
           # It is expected the that the build-image-comment-template.md is present in the application repo, not this one.
-          template: dispatch_workflows_summary_template.md.tpl
+          template: .github/dispatch_workflows_summary_template.md.tpl
           vars_path: ./output/job_summary_template_values.yaml
 
       - name: Job Summary
