@@ -58,6 +58,26 @@ def FindImagePart(value):
     value = value.replace(replace0, '')
     return value.replace(replace1, '')
 
+def CreateJobSummaryTemplateValues(rebuilt_images, summary):
+    template_values = {}
+    template_values["images"] = []
+    # template_values["summary"] = summary["summary"]
+
+    for github_repo, images in rebuilt_images.items():
+        for image in images:
+            template_values["images"].append({
+                "git_repo": github_repo,
+                "full_image": image["full-image"],
+                "git_tag": image["git-tag"],
+                "csm_releases": image["csm-releases"],
+                "job_status": image.get("job-status", None),
+                "job_url": image.get("job-html-url", None),
+            })
+
+    # Sort first by the repo, then by git tag, and last the image name 
+    template_values["images"].sort(key=lambda e: (e["repo"], e["git_tag"], e["full_image"]))
+
+    return template_values
 
 if __name__ == '__main__':
 
@@ -438,10 +458,16 @@ if __name__ == '__main__':
                     # launched = available_workflow.create_dispatch(git_tag)
                     wf = available_workflow
                     image["workflow"] = wf
+                    
                 elif is_test is None and available_workflow.name != "Build and Publish CT Docker Images":  # this is NOT a test, and we are NOT using the CT image workflow
                     # launched = available_workflow.create_dispatch(git_tag)
                     wf = available_workflow
                     image["workflow"] = wf
+
+
+            if "workflow" not in image:
+                logging.warn("Unable to determine workflow for image {} in Github repository {}".format(image["full-image"], repo_name))
+
             image["git-tag"] = git_tag
             # image["workflow-initiated"] = launched
 
@@ -575,6 +601,13 @@ if __name__ == '__main__':
 
     logging.info(json.dumps(rebuilt_images, indent=2))
     logging.info(summary)
+
+    # Generate output file for job status templating, if /output exists
+    if os.path.exists("/output"):
+        logging.info("Generating job summary template values")
+        template_values = CreateJobSummaryTemplateValues(rebuilt_images, summary)
+        with open("/output/job_summary_template_values.yaml", "w") as f:
+            yaml.dump(template_values, f)
 
     if "summary" in summary and summary["summary"]["success"] != len(targeted_workflows):
         logging.error("some workflows did not report success")

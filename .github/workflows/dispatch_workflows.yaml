@@ -18,8 +18,17 @@ jobs:
 
       - name: Dispatch workflows
         shell: bash
-        run: docker run -e GITHUB_TOKEN artifactory.algol60.net/csm-docker/unstable/hms-build-workflow-dispatcher:1.1.0-20220701221252.17f5392
+        run: docker run -e GITHUB_TOKEN -e DRY_RUN=true -v "$(realpath output):/output" artifactory.algol60.net/csm-docker/unstable/hms-build-workflow-dispatcher:1.1.0-20220701221252.17f5392
         env:
           GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
 
+      - name: Render template
+        id: template
+        uses: chuhlomin/render-template@v1.5
+        with:
+          # It is expected the that the build-image-comment-template.md is present in the application repo, not this one.
+          template: dispatch_workflows_summary_template.md.tpl
+          vars_path: ./output/job_summary_template_values.yaml
 
+      - name: Job Summary
+        run: echo '${{ steps.render_template.outputs.result }}' >> $GITHUB_STEP_SUMMARY
