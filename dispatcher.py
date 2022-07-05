@@ -108,9 +108,12 @@ if __name__ == '__main__':
     # Go Get LIST of Docker Images we need to investigate!
     ####################
     logging.info("find docker images")
+    images_to_rebuild = {}
 
     docker_image_tuples = []
     for branch in config["configuration"]["targeted-csm-branches"]:
+        logging.info("Checking out CSM branch {} for docker image extraction".format(branch))
+
         csm_repo.git.checkout(branch)
 
         # load the docker index file
@@ -124,60 +127,67 @@ if __name__ == '__main__':
 
         compare = config["docker-image-compare"]
 
-    ############################
-    # THis is some brittle logic!
-    ############################
-    # This ASSUMES that the docker/index.yaml file has no key depth greater than 3!
-    # This ASSUMES that all images are in artifactory.algol60.net/csm-docker/stable
-    # , it assume that '[' or ']' is part of the library, and NOT part of a legit value.
-    # compare the two dictionaries, get the changed values only.  Since the compare file has 'find_me' baked into all
-    # the values I care about, it should make it easier to find the actual image tags.
-    # perhaps there is some easier way to do this. or cleaner? Maybe I should have just used YQ and hard coded a lookup list
-    # I think it will be easier, cleaner if I provide a manual lookup between the image name and the repo in github.com\Cray-HPE;
-    # otherwise id have to do a docker inspect of some sort, which seems like a LOT of work
+        ############################
+        # THis is some brittle logic!
+        ############################
+        # This ASSUMES that the docker/index.yaml file has no key depth greater than 3!
+        # This ASSUMES that all images are in artifactory.algol60.net/csm-docker/stable
+        # , it assume that '[' or ']' is part of the library, and NOT part of a legit value.
+        # compare the two dictionaries, get the changed values only.  Since the compare file has 'find_me' baked into all
+        # the values I care about, it should make it easier to find the actual image tags.
+        # perhaps there is some easier way to do this. or cleaner? Maybe I should have just used YQ and hard coded a lookup list
+        # I think it will be easier, cleaner if I provide a manual lookup between the image name and the repo in github.com\Cray-HPE;
+        # otherwise id have to do a docker inspect of some sort, which seems like a LOT of work
 
-    ddiff = DeepDiff(compare, manifest)
-    changed = ddiff["values_changed"]
-    for k, v in changed.items():
-        path_to_digest = k
-        image_tag = v["new_value"]
+        ddiff = DeepDiff(compare, manifest)
+        changed = ddiff["values_changed"]
+        docker_image_tuples = []
+        for k, v in changed.items():
+            path_to_digest = k
+            image_tag = v["new_value"]
 
-        full_docker_image_name = GetDockerImageFromDiff(k, image_tag)
-        docker_image_to_rebuild = FindImagePart(k)
-        docker_image_tuple = (full_docker_image_name, docker_image_to_rebuild, image_tag)
-        docker_image_tuples.append(docker_image_tuple)
+            full_docker_image_name = GetDockerImageFromDiff(k, image_tag)
+            docker_image_to_rebuild = FindImagePart(k)
+            docker_image_tuple = (full_docker_image_name, docker_image_to_rebuild, image_tag)
+            docker_image_tuples.append(docker_image_tuple)
 
-    # Reshape the data
-    docker_image_tuples = list(set(docker_image_tuples))
-    images_to_rebuild = {}
-    images = []
-    # Concert tuple to dict
-    for tuple in docker_image_tuples:
-        # data = {}
-        # data["images"] = []
-        # image_name = tuple[1]
-        # if image_name in images_to_rebuild:
-        #     data = images_to_rebuild[image_name]
-        image = {}
-        image["full-image"] = tuple[0]
-        image["short-name"] = tuple[1]
-        image["image-tag"] = tuple[2]
-        images.append(image)
-        # data["images"].append(datum)
-        # images_to_rebuild[image_name] = data
+        # Reshape the data
+        docker_image_tuples = list(set(docker_image_tuples))
+        found_images = []
+        # Concert tuple to dict
+        for tuple in docker_image_tuples:
+            image = {}
+            image["full-image"] = tuple[0]
+            image["short-name"] = tuple[1]
+            image["image-tag"] = tuple[2]
+            found_images.append(image)
 
-    repo_lookup = config["repo-image-lookup"]
-    logging.info("cross reference docker images with lookup")
-    for repo in repo_lookup:
-        for image in images:
-            if repo["image"] == image["short-name"]:
-                if repo["repo"] in images_to_rebuild:
-                    repo_val = images_to_rebuild[repo["repo"]]
-                    repo_val.append(image)
-                    repo["repo"] = repo_val
+        logging.info("\tCross reference docker images with lookup")
+        short_name_to_github_repo = {}
+        images_short_names_of_interest = []
+        for mapping in config["github-repo-image-lookup"]:
+            short_name_to_github_repo[mapping["image"]] = mapping["github-repo"]
+            images_short_names_of_interest.append(mapping["image"])
+
+        for found_image in found_images:
+            if found_image["short-name"] in images_short_names_of_interest:
+                logging.info("\tFound image {}".format(found_image))
+
+                # Create the Github repo, if not present
+                github_repo = short_name_to_github_repo[found_image["short-name"]]
+                if github_repo not in images_to_rebuild:
+                    images_to_rebuild[github_repo] = []
+
+                # Check to see if this is a new image
+                if found_image["full-image"] not in list(map(lambda e: e["full-image"], images_to_rebuild[github_repo])):
+                    # This is a new image
+                    found_image["csm-releases"] = [branch]
+                    images_to_rebuild[github_repo].append(found_image)
                 else:
-                    images_to_rebuild[repo["repo"]] = []
-                    images_to_rebuild[repo["repo"]].append(image)
+                    # Add the accompanying CSM release branch to an image that was already found in a different CSM release
+                    for image in images_to_rebuild[github_repo]:
+                        if found_image["full-image"] == image["full-image"]:
+                            image["csm-releases"].append(branch)
 
     ####################
     # Start to process helm charts
@@ -188,7 +198,7 @@ if __name__ == '__main__':
 
     all_charts = {}
     for branch in config["configuration"]["targeted-csm-branches"]:
-        logging.info("Checking out CSM branch {}".format(branch))
+        logging.info("Checking out CSM branch {} for helm chart image extraction".format(branch))
         csm_repo.git.checkout(branch)
         
         # its possible the same helm chart is referenced multiple times, so we should collapse the list
@@ -374,7 +384,14 @@ if __name__ == '__main__':
                                     "full-image": image,
                                     "short-name": image_repo.split('/')[-1],
                                     "image-tag": image_tag,
+                                    "csm-releases": [branch]
                                 })
+                            else:
+                                # Add the accompanying CSM release branch to an image that was already found in a different CSM release
+                                for image in images_to_rebuild[github_repo]:
+                                    if found_image["full-image"] == image["full-image"]:
+                                        image["csm-releases"].append(branch)
+
 
     #################
     # Launch Rebuilds

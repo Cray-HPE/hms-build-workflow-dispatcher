@@ -28,15 +28,16 @@ helm-repo-lookup:
     path: stable/cray-hms-trs-operator
   - chart: cray-hms-hmcollector
     path: stable/hms-hmcollector
-repo-image-lookup:
-  - repo: hms-shcd-parser
+github-repo-image-lookup:
+  - github-repo: hms-shcd-parser
     image: hms-shcd-parser
-  - repo: hms-trs-worker-http-v1
+  - github-repo: hms-trs-worker-http-v1
     image: hms-trs-worker-http-v1
 configuration:
   manifest-repo: csm
   targeted-csm-branches:
     - main
+    - release/1.2
   docker-image-manifest: docker/index.yaml
   helm-manifest-directory: manifests
   target-chart-regex: cray-hms-.*
