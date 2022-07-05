@@ -56,13 +56,13 @@ Requires a [GITHUB_TOKEN](https://docs.github.com/en/authentication/keeping-your
 
 ```bash
 export GITHUB_TOKEN=ghp.....
-make; docker run --rm -it -e GITHUB_TOKEN hms-build-workflow-dispatcher:$(cat .version)
+make; docker run --rm -it -v "$(realpath output):/output"  -e GITHUB_TOKEN hms-build-workflow-dispatcher:$(cat .version)
 ```
 
 Perform a dry run:
 ```bash
 export GITHUB_TOKEN=ghp.....
-make; docker run --rm -it -e GITHUB_TOKEN -e DRYRUN=true hms-build-workflow-dispatcher:$(cat .version)
+make; docker run --rm -it -v "$(realpath output):/output"  -e GITHUB_TOKEN -e DRYRUN=true hms-build-workflow-dispatcher:$(cat .version)
 ```
 
 Requires a [GITHUB_TOKEN](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)
