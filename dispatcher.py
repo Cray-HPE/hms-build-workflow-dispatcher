@@ -75,7 +75,7 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
             })
 
     # Sort first by the repo, then by git tag, and last the image name 
-    template_values["images"].sort(key=lambda e: (e["repo"], e["git_tag"], e["full_image"]))
+    template_values["images"].sort(key=lambda e: (e["git_repo"], e["git_tag"], e["full_image"]))
 
     return template_values
 
