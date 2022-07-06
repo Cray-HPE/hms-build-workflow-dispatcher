@@ -72,7 +72,7 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
             workflow_name = None
             job_status = ":grey_question:"
 
-            if len(image["executions"]) > 0:
+            if "executions" in images and len(image["executions"]) > 0:
                 job_url = image["executions"][0].get("job-html-url", None)
                 workflow_name = image["executions"][0].get("workflow-name", None)
                 job_status = image["executions"][0].get("job-status", None)
