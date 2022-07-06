@@ -9,7 +9,12 @@ jobs:
     name: Dispatch workflows
     runs-on: ubuntu-latest
     steps:
-      - name: Auth token for PR creation
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Auth token for launching workflows
         uses: navikt/github-app-token-generator@v1
         id: get-token
         with:
