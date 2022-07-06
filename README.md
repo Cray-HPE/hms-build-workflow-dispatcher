@@ -10,7 +10,7 @@ The workflow dispatcher is an infrastructure as code solution to dispatching git
 
 1. `dispatcher.py` - python application for:
    1. Identifying docker images in the github.com/cray-hpe/csm repo that belong to HMS that need rebuilt. 
-   2. idenfiying docker images referenced in HMS charts in the github.com/cray-hpe/csm repo that need rebuilt.
+   2. Identifying docker images referenced in HMS charts in the github.com/cray-hpe/csm repo that need rebuilt.
    3. identifying the github workflows that would trigger docker image rebuilds.
    4. dispatching workflows, monitoring progress, reporting final status
 2. `configuration.yaml` - a YAML configuration file that includes:
@@ -32,7 +32,7 @@ The workflow dispatcher is an infrastructure as code solution to dispatching git
 
 The workflow is configured to execute:
 
-```
+```yaml
 on:
   workflow_dispatch:
   pull_request:
@@ -52,7 +52,20 @@ Can be loaded (along with configuration.yaml) into a jupyter environment and exe
 
 Requires a [GITHUB_TOKEN](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)
 
+### `hms-build-workflow-dispatcher` - locally built docker image
 
+```bash
+export GITHUB_TOKEN=ghp.....
+make; docker run --rm -it -v "$(realpath output):/output"  -e GITHUB_TOKEN hms-build-workflow-dispatcher:$(cat .version)
+```
+
+Perform a dry run:
+```bash
+export GITHUB_TOKEN=ghp.....
+make; docker run --rm -it -v "$(realpath output):/output"  -e GITHUB_TOKEN -e DRYRUN=true hms-build-workflow-dispatcher:$(cat .version)
+```
+
+Requires a [GITHUB_TOKEN](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)
 
 ## Program Flow
 

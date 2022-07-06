@@ -24,6 +24,12 @@ Removed - for now removed features
 Security - in case of vulnerabilities
 -->
 
+## [1.1.0] - 2020-07-01
+
+### Changed
+
+- CASMHMS-5594: Respect helm chart value overrides in specified in the CSM loftsman manifests.
+
 ## [1.0.0] - 2022-06-17
 
 ### Added
