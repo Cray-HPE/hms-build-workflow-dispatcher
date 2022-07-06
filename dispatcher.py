@@ -60,22 +60,44 @@ def FindImagePart(value):
 
 def CreateJobSummaryTemplateValues(rebuilt_images, summary):
     template_values = {}
-    template_values["images"] = []
+    template_values["repos"] = []
     # template_values["summary"] = summary["summary"]
 
     for github_repo, images in rebuilt_images.items():
+        image_list = []
         for image in images:
-            template_values["images"].append({
+            job_status = image.get("job-status", None)
+            if job_status == "completed":
+                job_status = ":white_check_mark:"
+            elif job_status == "failure":
+                job_status = ":x:"
+            elif job_status == None:
+                job_status = ":grey_question:"
+
+            image_list.append({
                 "git_repo": github_repo,
                 "full_image": image["full-image"],
+                "short_name": image["short-name"],
+                "image_tag": image["image-tag"],
                 "git_tag": image["git-tag"],
                 "csm_releases": image["csm-releases"],
-                "job_status": image.get("job-status", None),
+                "job_status": job_status,
                 "job_url": image.get("job-html-url", None),
+                "workflow_name": image.get("workflow-name", None)
             })
 
-    # Sort first by the repo, then by git tag, and last the image name 
-    template_values["images"].sort(key=lambda e: (e["git_repo"], e["git_tag"], e["full_image"]))
+        # Sort first by the repo, then by git tag, and last the image name 
+        image_list.sort(key=lambda e: (e["git_repo"], e["git_tag"], e["full_image"]))
+
+        template_values["repos"].append({
+            "git_repo": github_repo,
+            "images": image_list
+        })
+
+
+    # Sort by repo
+    template_values["repos"].sort(key=lambda e: (e["git_repo"]))
+        
 
     return template_values
 
