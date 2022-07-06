@@ -23,7 +23,7 @@ jobs:
 
       - name: Dispatch workflows
         shell: bash
-        run: docker run -e GITHUB_TOKEN -e DRYRUN=true -v "$(realpath output):/output" artifactory.algol60.net/csm-docker/unstable/hms-build-workflow-dispatcher:1.1.0-20220705221646.f65fd7b
+        run: docker run -e GITHUB_TOKEN -e DRYRUN=true -v "$(realpath output):/output" artifactory.algol60.net/csm-docker/unstable/hms-build-workflow-dispatcher:1.1.0-20220706022822.0b0e5a9
         env:
           GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
 
