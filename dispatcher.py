@@ -640,7 +640,7 @@ if __name__ == '__main__':
 
     if "summary" in summary and summary["summary"]["success"] != len(targeted_workflows):
         logging.error("some workflows did not report success")
-        exit(1)
-    logging.info("all workflows successfully completed")
+    else:
+        logging.info("all workflows successfully completed")
     exit(0)
 
