@@ -36,4 +36,4 @@ jobs:
           vars_path: ./output/job_summary_template_values.yaml
 
       - name: Job Summary
-        run: echo '${{ steps.render_template.outputs.result }}' >> $GITHUB_STEP_SUMMARY
+        run: echo '${{ steps.template.outputs.result }}'
