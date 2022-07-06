@@ -66,13 +66,22 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
     for github_repo, images in rebuilt_images.items():
         image_list = []
         for image in images:
-            job_status = image.get("job-status", None)
-            if job_status == "completed":
-                job_status = ":white_check_mark:"
-            elif job_status == "failure":
-                job_status = ":x:"
-            elif job_status == None:
-                job_status = ":grey_question:"
+
+            # TODO/HACK grab the first execution if it exists
+            job_url = None
+            workflow_name = None
+            job_status = ":grey_question:"
+
+            if len(image["executions"]) > 0:
+                job_url = image["executions"][0].get("job-html-url", None)
+                workflow_name = image["executions"][0].get("workflow-name", None)
+                job_status = image["executions"][0].get("job-status", None)
+
+                if job_status == "completed":
+                    job_status = ":white_check_mark:"
+                elif job_status == "failure":
+                    job_status = ":x:"
+
 
             image_list.append({
                 "git_repo": github_repo,
@@ -82,8 +91,8 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
                 "git_tag": image["git-tag"],
                 "csm_releases": image["csm-releases"],
                 "job_status": job_status,
-                "job_url": image.get("job-html-url", None),
-                "workflow_name": image.get("workflow-name", None)
+                "job_url": job_url,
+                "workflow_name": workflow_name
             })
 
         # Sort first by the repo, then by git tag, and last the image name 
@@ -94,11 +103,9 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
             "images": image_list
         })
 
-
     # Sort by repo
     template_values["repos"].sort(key=lambda e: (e["git_repo"]))
         
-
     return template_values
 
 if __name__ == '__main__':
