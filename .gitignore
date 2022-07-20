@@ -4,3 +4,11 @@ helm_charts/
 *tar.gz
 *.tgz
 .idea/
+
+# Prevent certificates from getting checked in
+*.ca
+*.cer
+*.crt
+*.csr
+*.key
+*.pem
