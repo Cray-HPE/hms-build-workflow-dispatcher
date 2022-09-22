@@ -37,6 +37,7 @@ configuration:
   manifest-repo: csm
   targeted-csm-branches:
     - main
+    - release/1.3
     - stable/1.2
   docker-image-manifest: docker/index.yaml
   helm-manifest-directory: manifests
