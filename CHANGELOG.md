@@ -24,6 +24,13 @@ Removed - for now removed features
 Security - in case of vulnerabilities
 -->
 
+
+## [1.1.1] - 2022-09-22
+
+### Changed
+
+- updated to include release/1.3
+
 ## [1.1.0] - 2020-07-01
 
 ### Changed
