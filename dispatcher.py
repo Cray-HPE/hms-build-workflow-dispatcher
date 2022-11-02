@@ -70,17 +70,17 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
             # TODO/HACK grab the first execution if it exists
             job_url = None
             workflow_name = None
-            job_status = ":grey_question:"
+            job_conclusion = ":grey_question:"
 
             if "executions" in image and len(image["executions"]) > 0:
                 job_url = image["executions"][0].get("job-html-url", None)
                 workflow_name = image["executions"][0].get("workflow-name", None)
-                job_status = image["executions"][0].get("job-status", None)
+                job_conclusion = image["executions"][0].get("job-conclusion", None)
 
-                if job_status == "completed":
-                    job_status = ":white_check_mark:"
-                elif job_status == "failure":
-                    job_status = ":x:"
+                if job_conclusion == "success":
+                    job_conclusion = ":white_check_mark:"
+                elif job_conclusion == "failure":
+                    job_conclusion = ":x:"
 
 
             image_list.append({
@@ -90,7 +90,7 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
                 "image_tag": image["image-tag"],
                 "git_tag": image["git-tag"],
                 "csm_releases": image["csm-releases"],
-                "job_status": job_status,
+                "job_conclusion": job_conclusion,
                 "job_url": job_url,
                 "workflow_name": workflow_name
             })
@@ -632,11 +632,11 @@ if __name__ == '__main__':
     logging.info(summary)
 
     # Generate output file for job status templating, if /output exists
-    if os.path.exists("/output"):
-        logging.info("Generating job summary template values")
-        template_values = CreateJobSummaryTemplateValues(rebuilt_images, summary)
-        with open("/output/job_summary_template_values.yaml", "w") as f:
-            yaml.dump(template_values, f)
+    logging.info("Generating job summary template values")
+    template_values = CreateJobSummaryTemplateValues(rebuilt_images, summary)
+    os.makedirs("output/", exist_ok=True)
+    with open("output/job_summary_template_values.yaml", "w") as f:
+        yaml.dump(template_values, f)
 
     if "summary" in summary and summary["summary"]["success"] != len(targeted_workflows):
         logging.error("some workflows did not report success")

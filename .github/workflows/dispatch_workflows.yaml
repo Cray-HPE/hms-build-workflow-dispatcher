@@ -14,6 +14,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+
+      - name: Install python dependencies
+        shell: bash
+        run: pip3 install -r requirements.txt        
+      
       - name: Auth token for launching workflows
         uses: navikt/github-app-token-generator@v1
         id: get-token
@@ -23,9 +35,10 @@ jobs:
 
       - name: Dispatch workflows
         shell: bash
-        run: docker run -e GITHUB_TOKEN -e DRYRUN=false -v "$(realpath output):/output" artifactory.algol60.net/csm-docker/stable/hms-build-workflow-dispatcher:1.1.1
         env:
           GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+          DRYRUN: false
+        run: ./dispatcher.py
 
       - name: Render template
         id: template

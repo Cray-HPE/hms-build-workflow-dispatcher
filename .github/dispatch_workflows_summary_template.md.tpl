@@ -26,7 +26,7 @@
                 {{- end }}
                 </ul>
             </td>
-			<td>{{$image.job_status}}</td>
+			<td>{{$image.job_conclusion}}</td>
             {{- if $image.job_url}}
 			<td><a href="{{$image.job_url}}">{{$image.workflow_name}}</a></td>
             {{ else }}
