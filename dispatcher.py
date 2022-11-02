@@ -454,8 +454,6 @@ if __name__ == '__main__':
         for git_tag in repo.get_tags():
             if not re.match(non_manifest_image["tag-regex"], git_tag.name):
                 continue
-            print(git_tag)
-
 
             # Remove the leading v in the tag if present 
             image_tag = git_tag.name.removeprefix("v")
