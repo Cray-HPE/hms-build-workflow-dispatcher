@@ -70,17 +70,17 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
             # TODO/HACK grab the first execution if it exists
             job_url = None
             workflow_name = None
-            job_status = ":grey_question:"
+            job_conclusion = ":grey_question:"
 
             if "executions" in image and len(image["executions"]) > 0:
                 job_url = image["executions"][0].get("job-html-url", None)
                 workflow_name = image["executions"][0].get("workflow-name", None)
-                job_status = image["executions"][0].get("job-status", None)
+                job_conclusion = image["executions"][0].get("job-conclusion", None)
 
-                if job_status == "completed":
-                    job_status = ":white_check_mark:"
-                elif job_status == "failure":
-                    job_status = ":x:"
+                if job_conclusion == "success":
+                    job_conclusion = ":white_check_mark:"
+                elif job_conclusion == "failure":
+                    job_conclusion = ":x:"
 
 
             image_list.append({
@@ -90,7 +90,7 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
                 "image_tag": image["image-tag"],
                 "git_tag": image["git-tag"],
                 "csm_releases": image["csm-releases"],
-                "job_status": job_status,
+                "job_conclusion": job_conclusion,
                 "job_url": job_url,
                 "workflow_name": workflow_name
             })
@@ -441,6 +441,35 @@ if __name__ == '__main__':
                                     if found_image["full-image"] == image["full-image"]:
                                         image["csm-releases"].append(branch)
 
+    ############################
+    # Handle non-manifest images
+    ############################
+    logging.info("attempting to identify non-manifest container images to rebuild")
+    
+    for non_manifest_image in config["non-manifest-images"]:
+        print("Github repo", non_manifest_image["github-repo"])
+        print("tag-regex", non_manifest_image["tag-regex"])
+        repo = g.get_organization("Cray-HPE").get_repo(non_manifest_image["github-repo"])
+
+        for git_tag in repo.get_tags():
+            if not re.match(non_manifest_image["tag-regex"], git_tag.name):
+                continue
+
+            # Remove the leading v in the tag if present 
+            image_tag = git_tag.name.removeprefix("v")
+            image_repo = non_manifest_image["image_repo"]
+
+            github_repo = non_manifest_image["github-repo"]
+            if github_repo not in images_to_rebuild:
+                images_to_rebuild[github_repo] = []
+
+
+            images_to_rebuild[github_repo].append({
+                "full-image": image_repo+":"+image_tag,
+                "short-name": image_repo.split('/')[-1],
+                "image-tag": image_tag,
+                "csm-releases": []
+            })
 
     #################
     # Launch Rebuilds
@@ -448,8 +477,7 @@ if __name__ == '__main__':
     logging.info("attempting to identify workflows")
 
     desired_workflow_names = ["Build and Publish Service Docker Images", "Build and Publish Docker Images",
-                              "Build and Publish CT Docker Images"]
-    # Todo what about the hms-test repo workflow? Build and Publish hms-test ... for now we will ignore it.
+                              "Build and Publish CT Docker Images", "Build and Publish hms-test Docker image"]
 
     for repo_name, val in images_to_rebuild.items():
         images = images_to_rebuild[repo_name]  # im going to be writing back to this
@@ -466,7 +494,8 @@ if __name__ == '__main__':
             full_image = image["full-image"]
             commit = None
 
-            is_test = re.search(".*-test", short_name)
+            is_hms_test = short_name == "hms-test"
+            is_ct_test = re.search(".*-test", short_name) and not is_hms_test
 
             tags = []
             for tag in repo_data.get_tags():
@@ -483,19 +512,23 @@ if __name__ == '__main__':
             launched = False
             for available_workflow in available_workflows:
                 wf = {}
-                if is_test is not None and available_workflow.name == "Build and Publish CT Docker Images":  # this is a test image and the CT image workflow
+                if is_ct_test is not None and available_workflow.name == "Build and Publish CT Docker Images":  # this is a test image and the CT image workflow
                     # launched = available_workflow.create_dispatch(git_tag)
                     wf = available_workflow
                     image["workflow"] = wf
-                    
-                elif is_test is None and available_workflow.name != "Build and Publish CT Docker Images":  # this is NOT a test, and we are NOT using the CT image workflow
+                elif is_hms_test and available_workflow.name == "Build and Publish hms-test Docker image":
                     # launched = available_workflow.create_dispatch(git_tag)
                     wf = available_workflow
                     image["workflow"] = wf
-
+                elif is_ct_test is None and available_workflow.name != "Build and Publish CT Docker Images":  # this is NOT a test, and we are NOT using the CT image workflow
+                    # launched = available_workflow.create_dispatch(git_tag)
+                    wf = available_workflow
+                    image["workflow"] = wf
 
             if "workflow" not in image:
                 logging.warn("Unable to determine workflow for image {} in Github repository {}".format(image["full-image"], repo_name))
+
+            logging.info(f'Building image {full_image} with workflow "{image["workflow"].name}"')
 
             image["git-tag"] = git_tag
             # image["workflow-initiated"] = launched
@@ -632,11 +665,11 @@ if __name__ == '__main__':
     logging.info(summary)
 
     # Generate output file for job status templating, if /output exists
-    if os.path.exists("/output"):
-        logging.info("Generating job summary template values")
-        template_values = CreateJobSummaryTemplateValues(rebuilt_images, summary)
-        with open("/output/job_summary_template_values.yaml", "w") as f:
-            yaml.dump(template_values, f)
+    logging.info("Generating job summary template values")
+    template_values = CreateJobSummaryTemplateValues(rebuilt_images, summary)
+    os.makedirs("output/", exist_ok=True)
+    with open("output/job_summary_template_values.yaml", "w") as f:
+        yaml.dump(template_values, f)
 
     if "summary" in summary and summary["summary"]["success"] != len(targeted_workflows):
         logging.error("some workflows did not report success")

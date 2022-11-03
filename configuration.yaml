@@ -54,3 +54,12 @@ docker-image-compare:
         - find_me
       hms-trs-worker-http-v1:
         - find_me
+      hardware-topology-assistant:
+        - find_me
+non-manifest-images:
+- github-repo: hms-test
+  tag-regex: v[3-4]\.[0-9]\.[0-9]
+  image_repo: artifactory.algol60.net/csm-docker/stable/hms-test
+- github-repo: hms-build-environment
+  tag-regex: v1\.[0-9]\.[0-9]
+  image_repo: artifactory.algol60.net/csm-docker/stable/hms-build-environment
