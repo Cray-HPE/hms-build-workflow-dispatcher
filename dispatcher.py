@@ -41,6 +41,7 @@ from github import Github
 import requests
 import yaml
 import subprocess
+import urllib
 
 def GetDockerImageFromDiff(value, tag):
     # example: root['artifactory.algol60.net/csm-docker/stable']['images']['hms-trs-worker-http-v1'][0]
@@ -115,6 +116,23 @@ if __name__ == '__main__':
     ####################
 
     github_token = os.getenv("GITHUB_TOKEN")
+
+    helm_repo_creds = {}
+    helm_repo_creds["artifactory.algol60.net"] = {
+        "username": os.getenv("ARTIFACTORY_ALGOL60_READONLY_USERNAME"),
+        "password": os.getenv("ARTIFACTORY_ALGOL60_READONLY_TOKEN")
+    }
+
+    for helm_repo in helm_repo_creds:
+        username = helm_repo_creds[helm_repo]["username"]
+        if username is None or username == "":
+            logging.error(f'Provided username for {helm_repo} is empty')
+            exit(1)
+
+        password = helm_repo_creds[helm_repo]["password"] 
+        if password is None or password == "":
+            logging.error(f'Provided password for {helm_repo} is empty')
+            exit(1)
 
     with open("configuration.yaml") as stream:
         try:
@@ -329,7 +347,18 @@ if __name__ == '__main__':
         charts_to_download.extend(list(map(lambda e: chart[e]["download-url"], chart)))
 
     for chart in charts_to_download:
-        r = requests.get(chart, stream=True)
+        # Check to see if authentication is required for this helm repo
+        auth = None
+        url = urllib.parse.urlparse(chart)
+        if url.hostname in helm_repo_creds:
+            # Perform request with authentication
+            auth = requests.auth.HTTPBasicAuth(helm_repo_creds[url.hostname]["username"], helm_repo_creds[url.hostname]["password"])
+
+        # Download the helm chart!
+        r = requests.get(chart, stream=True, auth=auth)
+        if r.status_code != 200:
+            logging.error(f'Unexpected status code {r.status_code} when downloading chart {chart}')
+            exit(1)
         chart_url = []
         chart_url = chart.split('/')
         file_name = chart_url[-1]
