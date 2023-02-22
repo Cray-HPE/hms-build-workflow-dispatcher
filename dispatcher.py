@@ -42,6 +42,7 @@ import requests
 import yaml
 import subprocess
 import urllib
+import git
 
 def GetDockerImageFromDiff(value, tag):
     # example: root['artifactory.algol60.net/csm-docker/stable']['images']['hms-trs-worker-http-v1'][0]
@@ -181,7 +182,11 @@ if __name__ == '__main__':
     for branch in config["configuration"]["targeted-csm-branches"]:
         logging.info("Checking out CSM branch {} for docker image extraction".format(branch))
 
-        csm_repo.git.checkout(branch)
+        try:
+            csm_repo.git.checkout(branch)
+        except git.exc.GitCommandError as e:
+            logging.error(f'Failed to checkout branch "{branch}", skipping')
+            continue
 
         # load the docker index file
         docker_index = os.path.join(csm_dir, config["configuration"]["docker-image-manifest"])
@@ -266,7 +271,11 @@ if __name__ == '__main__':
     all_charts = {}
     for branch in config["configuration"]["targeted-csm-branches"]:
         logging.info("Checking out CSM branch {} for helm chart image extraction".format(branch))
-        csm_repo.git.checkout(branch)
+        try:
+            csm_repo.git.checkout(branch)
+        except git.exc.GitCommandError as e:
+            logging.error(f'Failed to checkout branch "{branch}", skipping')
+            continue
         
         # its possible the same helm chart is referenced multiple times, so we should collapse the list
         # example download link: https://artifactory.algol60.net/artifactory/csm-helm-charts/stable/cray-hms-bss/cray-hms-bss-2.0.4.tgz
@@ -421,7 +430,13 @@ if __name__ == '__main__':
 
                     # Determine the names of the main application image, and the test image
                     images_repos_of_interest = []
-                    images_repos_of_interest.append(values["image"]["repository"])
+                    
+                    # The following is a WAR for the cray-power-control helm chart as it does things a little differently.
+                    if entry == "cray-power-control":
+                        images_repos_of_interest.append(values["cray-service"]["containers"]["cray-power-control"]["image"]["repository"])
+                    else:
+                        images_repos_of_interest.append(values["image"]["repository"])
+                    
                     if "testVersion" in values["global"]:
                         images_repos_of_interest.append(values["tests"]["image"]["repository"])
 
