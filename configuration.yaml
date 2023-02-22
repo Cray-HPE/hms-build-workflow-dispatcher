@@ -28,6 +28,8 @@ helm-repo-lookup:
     path: stable/cray-hms-trs-operator
   - chart: cray-hms-hmcollector
     path: stable/hms-hmcollector
+  - chart: cray-power-control
+    path: stable/cray-hms-power-control
 github-repo-image-lookup:
   - github-repo: hms-shcd-parser
     image: hms-shcd-parser
@@ -37,12 +39,18 @@ configuration:
   manifest-repo: csm
   targeted-csm-branches:
     - main
+    - release/1.9
+    - release/1.8
+    - release/1.7
+    - release/1.6
+    - release/1.5
+    - release/1.4
     - release/1.3
     - release/1.3.0
     - stable/1.2
   docker-image-manifest: docker/index.yaml
   helm-manifest-directory: manifests
-  target-chart-regex: cray-hms-.*
+  target-chart-regex: cray-hms-.*|cray-power-control
   sleep-duration-seconds: 5
   time-limit-minutes: 10
   webhook-sleep-seconds: 10
