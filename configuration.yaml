@@ -35,6 +35,8 @@ github-repo-image-lookup:
     image: hms-shcd-parser
   - github-repo: hms-trs-worker-http-v1
     image: hms-trs-worker-http-v1
+  - github-repo: hms-capmc
+    image: cray-capmc
 configuration:
   manifest-repo: csm
   targeted-csm-branches:
@@ -63,6 +65,8 @@ docker-image-compare:
       hms-trs-worker-http-v1:
         - find_me
       hardware-topology-assistant:
+        - find_me
+      cray-capmc:
         - find_me
 non-manifest-images:
 - github-repo: hms-test
