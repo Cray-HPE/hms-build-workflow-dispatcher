@@ -37,6 +37,8 @@ github-repo-image-lookup:
     image: hms-trs-worker-http-v1
   - github-repo: hms-capmc
     image: cray-capmc
+  - github-repo: hardware-topology-assistant
+    image: hardware-topology-assistant
 configuration:
   manifest-repo: csm
   targeted-csm-branches:
