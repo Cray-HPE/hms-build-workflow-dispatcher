@@ -79,7 +79,7 @@ docker-image-compare:
         - find_me
 non-manifest-images:
 - github-repo: hms-test
-  tag-regex: v[3-4]\.[0-9]\.[0-9]
+  tag-regex: v[3-9]\.[0-9]+\.[0-9]+ # v1 and v2 images are not build in github, so ignore them.
   image_repo: artifactory.algol60.net/csm-docker/stable/hms-test
 - github-repo: hms-build-environment
   tag-regex: v1\.[0-9]\.[0-9]
