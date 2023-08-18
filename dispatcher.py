@@ -43,6 +43,7 @@ import yaml
 import subprocess
 import urllib
 import git
+import pathlib
 
 def GetDockerImageFromDiff(value, tag):
     # example: root['artifactory.algol60.net/csm-docker/stable']['images']['hms-trs-worker-http-v1'][0]
@@ -110,6 +111,21 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
         
     return template_values
 
+def render_templates(csm_dir):
+    render_templates_script_path = pathlib.Path(csm_dir).joinpath("render_templates.sh")
+    logging.info(f"Checking for render templates script at: {render_templates_script_path}")
+    if render_templates_script_path.exists():
+        logging.info(f"Render templates script exists")
+        result = subprocess.run(["bash", str(render_templates_script_path)], capture_output=True, text=True)
+        if result.returncode != 0:
+            logging.error("Failed to render product stream templates. Exit code {}".format(result.returncode))
+            logging.error("stderr: {}".format(result.stderr))
+            logging.error("stdout: {}".format(result.stdout))
+            exit(1)
+    else:
+        logging.info(f"Render templates script does not exist")
+
+
 if __name__ == '__main__':
 
     ####################
@@ -135,7 +151,13 @@ if __name__ == '__main__':
             logging.error(f'Provided password for {helm_repo} is empty')
             exit(1)
 
-    with open("configuration.yaml") as stream:
+
+    dispatcher_configuration_file = os.getenv("DISPATCHER_CONFIGURATION_FILE")
+    if dispatcher_configuration_file is None:
+        print("Environment variable DISPATCHER_CONFIGURATION_FILE is not set")
+        exit(1)
+    print(f"Configuration file: {dispatcher_configuration_file}")
+    with open(dispatcher_configuration_file) as stream:
         try:
             config = yaml.safe_load(stream)
         except yaml.YAMLError as exc:
@@ -150,7 +172,7 @@ if __name__ == '__main__':
     log_level = os.getenv('LOG_LEVEL', config["configuration"]["log-level"])
 
     logging.basicConfig(level=log_level)
-    logging.info("load configuration")
+    logging.info("Loaded configuration")
 
     dry_run = False
     if os.getenv("DRYRUN", "false").lower() == "true":
@@ -170,7 +192,9 @@ if __name__ == '__main__':
         shutil.rmtree(csm_dir)
 
     os.mkdir(csm_dir)
-    csm_repo = Repo.clone_from(csm_repo_metadata.clone_url, csm_dir)
+    logging.info(f"Clone URL: {csm_repo_metadata.ssh_url}")
+    csm_repo = Repo.clone_from(csm_repo_metadata.ssh_url, csm_dir)
+    logging.info("retrieved manifest repo")
 
     ####################
     # Go Get LIST of Docker Images we need to investigate!
@@ -184,6 +208,7 @@ if __name__ == '__main__':
 
         try:
             csm_repo.git.checkout(branch)
+            render_templates(csm_dir)
         except git.exc.GitCommandError as e:
             logging.error(f'Failed to checkout branch "{branch}", skipping')
             continue
@@ -273,6 +298,7 @@ if __name__ == '__main__':
         logging.info("Checking out CSM branch {} for helm chart image extraction".format(branch))
         try:
             csm_repo.git.checkout(branch)
+            render_templates(csm_dir)
         except git.exc.GitCommandError as e:
             logging.error(f'Failed to checkout branch "{branch}", skipping')
             continue

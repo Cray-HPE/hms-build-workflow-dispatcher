@@ -1,0 +1,24 @@
+---
+# Helm chart to artifactory folder mapping
+# Example:
+# Helm chart name: csm-redfish-interface-emulator
+# Download URL: https://artifactory.algol60.net/artifactory/csm-helm-charts/stable/csm-redfish-interface-emulator/csm-redfish-interface-emulator-0.1.0.tgz
+# Path: stable/csm-redfish-interface-emulator
+helm-repo-lookup:
+  - chart: spc
+    path: stable/spc
+github-repo-image-lookup: []
+configuration:
+  manifest-repo: spc-product-stream
+  targeted-csm-branches:
+    - main
+    - release\/.+ # Match all release versions
+  docker-image-manifest: docker/index.yaml
+  helm-manifest-directory: manifests
+  target-chart-regex: spc
+  sleep-duration-seconds: 5
+  time-limit-minutes: 10
+  webhook-sleep-seconds: 10
+  log-level: INFO
+docker-image-compare: {}
+non-manifest-images: []
