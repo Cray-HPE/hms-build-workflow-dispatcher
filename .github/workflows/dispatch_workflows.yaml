@@ -9,6 +9,7 @@ jobs:
     strategy:
       matrix:
         product-stream: ["csm", "spc"]
+      fail-fast: false
     name: Dispatch workflows
     runs-on: ubuntu-latest
     steps:
