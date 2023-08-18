@@ -192,8 +192,8 @@ if __name__ == '__main__':
         shutil.rmtree(csm_dir)
 
     os.mkdir(csm_dir)
-    clone_url = f'https://{github_token}@github.com/Cray-HPE/{csm}'
-    csm_repo = Repo.clone_from(clone_url, csm_dir)
+    logging.info(f"Clone URL: {csm_repo_metadata.ssh_url}")
+    csm_repo = Repo.clone_from(csm_repo_metadata.ssh_url, csm_dir)
     logging.info("retrieved manifest repo")
 
     ####################
