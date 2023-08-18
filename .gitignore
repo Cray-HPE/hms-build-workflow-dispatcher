@@ -7,6 +7,7 @@ helm_charts/
 *.tgz
 *.xlsx
 .idea/
+.env.sh
 
 # Prevent certificates from getting checked in
 *.ca

@@ -6,6 +6,9 @@ on:
     - cron: '0 7 * * *' #7am every day
 jobs:
   dispatch_workflows:
+    strategy:
+      matrix:
+        product-stream: ["csm", "spc"]
     name: Dispatch workflows
     runs-on: ubuntu-latest
     steps:
@@ -41,7 +44,8 @@ jobs:
           GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
           ARTIFACTORY_ALGOL60_READONLY_USERNAME: ${{ secrets.ARTIFACTORY_ALGOL60_READONLY_USERNAME }}
           ARTIFACTORY_ALGOL60_READONLY_TOKEN: ${{ secrets.ARTIFACTORY_ALGOL60_READONLY_TOKEN }}
-          DRYRUN: false
+          DISPATCHER_CONFIGURATION_FILE: configuration_${{ matrix.product-stream }}.yaml
+          DRYRUN: true
         run: ./dispatcher.py
 
       - name: Render template

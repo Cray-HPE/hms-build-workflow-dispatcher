@@ -237,7 +237,9 @@ if __name__ == '__main__':
         # otherwise id have to do a docker inspect of some sort, which seems like a LOT of work
 
         ddiff = DeepDiff(compare, manifest)
-        changed = ddiff["values_changed"]
+        changed = {}
+        if "values_changed" in ddiff:
+            changed = ddiff["values_changed"]
         docker_image_tuples = []
         for k, v in changed.items():
             path_to_digest = k
@@ -320,9 +322,13 @@ if __name__ == '__main__':
                     # TODO Instead we should make a best effort attempt at rebuilding images, but we should exist an non-zero exit code
                     # to signal that not all images were rebuilt.
                     continue
-            upstream_sources = {}
-            for chart in manifest["spec"]["sources"]["charts"]:
-                upstream_sources[chart["name"]] = chart["location"]
+            # Upstream sources from loftsman
+            loftsman_upstream_sources = {}
+            if "sources" in manifest["spec"]: 
+                # Not all manifests have sources specified
+                for chart in manifest["spec"]["sources"]["charts"]:
+                    loftsman_upstream_sources[chart["name"]] = chart["location"]
+
             for chart in manifest["spec"]["charts"]:
                 chart_name = chart["name"]
                 chart_version = chart["version"]
@@ -332,9 +338,22 @@ if __name__ == '__main__':
                     download_url = None
                     for repo in helm_lookup:
                         if repo["chart"] == chart["name"]:
-                            download_url = urljoin(upstream_sources[chart["source"]],
-                                                              os.path.join(repo["path"], chart_name + "-" + str(
-                                                                  chart_version) + ".tgz"))
+                            upstream_source = None
+                            if "source_override" in repo:
+                                upstream_source = repo["source_override"] 
+                            elif "source" in chart and chart["source"] in loftsman_upstream_sources:
+                                upstream_source = loftsman_upstream_sources[chart["source"]]
+                            else:
+                                logging.fatal(f'Unable to determine source for chart: {chart_name}')
+
+                            logging.info(upstream_source)
+                            logging.info( os.path.join(repo["path"], chart_name + "-" + str(chart_version) + ".tgz"))
+
+
+                            # This if for if the upstream source was defined in loftsman manifest
+                            download_url = urljoin(upstream_source, 
+                                                   os.path.join(repo["path"], chart_name + "-" + str(chart_version) + ".tgz"))
+                            logging.info(download_url)
 
                     # Save chart overrides
                     # ASSUMPTION: It is being assumed that a HMS helm chart will be referenced only once in all loftsman manifests for any
@@ -350,6 +369,8 @@ if __name__ == '__main__':
                     all_charts[chart_name][chart_version]["csm-releases"][branch] = {}
                     if "values" in chart:
                         all_charts[chart_name][chart_version]["csm-releases"][branch]["values"] = chart["values"]
+                    
+                    logging.info(f'Chart information: {all_charts[chart_name][chart_version]}')
 
     # The following is really ugly, but prints out a nice summary of the chart overrides across all of the CSM branches this script it is looking at.
     # This looks ugly, as I'm preferring to make the helm templating process later in this script nicer.
