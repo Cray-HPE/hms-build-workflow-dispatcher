@@ -11,7 +11,7 @@ helm-repo-lookup:
 github-repo-image-lookup: []
 configuration:
   product-stream-repo: spc-product-stream
-  targeted-csm-branches:
+  targeted-branches:
     - main
     - release\/.+ # Match all release versions
   docker-image-manifest: docker/index.yaml

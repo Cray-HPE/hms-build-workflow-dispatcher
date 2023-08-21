@@ -48,7 +48,7 @@ github-repo-image-lookup:
     image: hardware-topology-assistant
 configuration:
   product-stream-repo: csm
-  targeted-csm-branches:
+  targeted-branches:
     - main
     - release/1.9
     - release/1.8
