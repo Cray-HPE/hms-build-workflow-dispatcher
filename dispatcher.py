@@ -44,7 +44,6 @@ import subprocess
 import urllib
 import git
 import pathlib
-import base64
 
 def GetDockerImageFromDiff(value, tag):
     # example: root['artifactory.algol60.net/csm-docker/stable']['images']['hms-trs-worker-http-v1'][0]
@@ -195,7 +194,7 @@ if __name__ == '__main__':
     os.mkdir(product_stream_repo_dir)
 
     clone_url = f'https://github.com/Cray-HPE/{product_stream_repo_name}'
-    logging.info(f"Product Stream Repo clone URL: {product_stream_repo_metadata.html_url}")
+    logging.info(f"Product stream repo clone URL: {clone_url}")
     product_stream_repo = Repo.clone_from(clone_url, product_stream_repo_dir)
     logging.info("retrieved manifest repo")
 

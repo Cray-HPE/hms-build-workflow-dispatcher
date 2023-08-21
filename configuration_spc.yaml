@@ -13,7 +13,7 @@ configuration:
   product-stream-repo: spc-product-stream
   targeted-branches: # Explicitly defined branches
     - main
-  targeted-branch-regexes:
+  targeted-branch-regexes: # Regexes to match 
     - release\/.+ # Match all release versions
   docker-image-manifest: docker/index.yaml
   helm-manifest-directory: manifests
