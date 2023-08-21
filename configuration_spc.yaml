@@ -11,8 +11,9 @@ helm-repo-lookup:
 github-repo-image-lookup: []
 configuration:
   product-stream-repo: spc-product-stream
-  targeted-branches:
+  targeted-branches: # Explicitly defined branches
     - main
+  targeted-branch-regexes:
     - release\/.+ # Match all release versions
   docker-image-manifest: docker/index.yaml
   helm-manifest-directory: manifests

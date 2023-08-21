@@ -200,13 +200,28 @@ if __name__ == '__main__':
     logging.info("retrieved manifest repo")
 
     ####################
+    # Determine branches of intrest
+    ####################
+
+    targeted_branches = config["configuration"]["targeted-branches"]
+    for remote_ref in product_stream_repo.remote().refs:
+        branch_name = remote_ref.name.removeprefix("origin/")
+        for branch_regex in config["configuration"]["targeted-branch-regexes"]:
+            if branch_name not in targeted_branches and re.match(branch_regex, branch_name):
+                targeted_branches.append(branch_name)
+
+    logging.info('Targeted product stream branches')
+    for branch in targeted_branches:
+        logging.info(f'\t- {branch}')
+
+    ####################
     # Go Get LIST of Docker Images we need to investigate!
     ####################
     logging.info("find docker images")
     images_to_rebuild = {}
 
     docker_image_tuples = []
-    for branch in config["configuration"]["targeted-branches"]:
+    for branch in targeted_branches:
         logging.info("Checking out product stream branch {} for docker image extraction".format(branch))
 
         try:
@@ -299,7 +314,7 @@ if __name__ == '__main__':
     logging.info("find helm charts")
 
     all_charts = {}
-    for branch in config["configuration"]["targeted-branches"]:
+    for branch in targeted_branches:
         logging.info("Checking out product stream branch {} for helm chart image extraction".format(branch))
         try:
             product_stream_repo.git.checkout(branch)
@@ -379,7 +394,7 @@ if __name__ == '__main__':
     # This looks ugly, as I'm preferring to make the helm templating process later in this script nicer.
     logging.info("Manifest value overrides")
     manifest_values_overrides = {}
-    for branch in config["configuration"]["targeted-branches"]:
+    for branch in targeted_branches:
         manifest_values_overrides[branch] = {}
 
         for chart_name, versions in all_charts.items():
@@ -496,7 +511,7 @@ if __name__ == '__main__':
 
                     # Now template the Helm chart to learn the image tags
                     for branch in all_charts[chart["name"]][chart["version"]]["product-stream-releases"]:
-                        logging.info("\Product stream Branch {}".format(branch))
+                        logging.info("\tProduct stream Branch {}".format(branch))
                         chart_value_overrides = all_charts[chart["name"]][chart["version"]]["product-stream-releases"][branch].get("values")
                         
                         # Write out value overrides
@@ -514,17 +529,17 @@ if __name__ == '__main__':
                             exit(1)
 
                         logging.info("\t\tImages in use:")
-                        for image in result.stdout.splitlines():
-                            image_repo, image_tag = image.split(":", 2)
+                        for image_ref in result.stdout.splitlines():
+                            image_repo, image_tag = image_ref.split(":", 2)
 
                             if image_repo not in images_repos_of_interest:
                                 continue
-                            logging.info("\t\t- {}".format(image))
+                            logging.info("\t\t- {}".format(image_ref))
 
                             # Add the image to the list to be rebuilt if this is a new image
-                            if image not in list(map(lambda e: e["full-image"], images_to_rebuild[github_repo])):
+                            if image_ref not in list(map(lambda e: e["full-image"], images_to_rebuild[github_repo])):
                                 images_to_rebuild[github_repo].append({
-                                    "full-image": image,
+                                    "full-image": image_ref,
                                     "short-name": image_repo.split('/')[-1],
                                     "image-tag": image_tag,
                                     "product-stream-releases": [branch]
@@ -532,7 +547,7 @@ if __name__ == '__main__':
                             else:
                                 # Add the accompanying product stream release branch to an image that was already found in a different product stream release
                                 for image in images_to_rebuild[github_repo]:
-                                    if found_image["full-image"] == image["full-image"]:
+                                    if image_ref == image["full-image"]:
                                         image["product-stream-releases"].append(branch)
 
     ############################
