@@ -185,22 +185,18 @@ if __name__ == '__main__':
     ####################
     logging.info("retrieve manifest repo")
 
-    csm = config["configuration"]["manifest-repo"]
-    csm_repo_metadata = g.get_organization("Cray-HPE").get_repo(csm)
-    csm_dir = csm
+    product_stream_repo_name = config["configuration"]["product-stream-repo"]
+    product_stream_repo_metadata = g.get_organization("Cray-HPE").get_repo(product_stream_repo_name)
+    product_stream_repo_dir = product_stream_repo_name
     # Clean up in case it exsts
-    if os.path.exists(csm_dir):
-        shutil.rmtree(csm_dir)
+    if os.path.exists(product_stream_repo_dir):
+        shutil.rmtree(product_stream_repo_dir)
 
-    os.mkdir(csm_dir)
-    logging.info(f"Clone URL: {csm_repo_metadata.ssh_url}")
-    logging.info(f"Clone URL: {csm_repo_metadata.url}")
-    logging.info(f"Clone URL: {csm_repo_metadata.html_url}")
-    # csm_repo = Repo.clone_from(csm_repo_metadata.ssh_url, csm_dir, multi_options=[
-    #     f'--config http.https://github.com/.extraheader="AUTHORIZATION: basic {base64.b64encode(github_token.encode())}"'
-    # ])
-    clone_url = f'https://github.com/Cray-HPE/{csm}'
-    csm_repo = Repo.clone_from(clone_url, csm_dir)
+    os.mkdir(product_stream_repo_dir)
+
+    clone_url = f'https://github.com/Cray-HPE/{product_stream_repo_name}'
+    logging.info(f"Product Stream Repo clone URL: {product_stream_repo_metadata.html_url}")
+    product_stream_repo = Repo.clone_from(clone_url, product_stream_repo_dir)
     logging.info("retrieved manifest repo")
 
     ####################
@@ -214,14 +210,14 @@ if __name__ == '__main__':
         logging.info("Checking out CSM branch {} for docker image extraction".format(branch))
 
         try:
-            csm_repo.git.checkout(branch)
-            render_templates(csm_dir)
+            product_stream_repo.git.checkout(branch)
+            render_templates(product_stream_repo_dir)
         except git.exc.GitCommandError as e:
             logging.error(f'Failed to checkout branch "{branch}", skipping')
             continue
 
         # load the docker index file
-        docker_index = os.path.join(csm_dir, config["configuration"]["docker-image-manifest"])
+        docker_index = os.path.join(product_stream_repo_dir, config["configuration"]["docker-image-manifest"])
         with open(docker_index) as stream:
             try:
                 manifest = yaml.safe_load(stream)
@@ -306,8 +302,8 @@ if __name__ == '__main__':
     for branch in config["configuration"]["targeted-csm-branches"]:
         logging.info("Checking out CSM branch {} for helm chart image extraction".format(branch))
         try:
-            csm_repo.git.checkout(branch)
-            render_templates(csm_dir)
+            product_stream_repo.git.checkout(branch)
+            render_templates(product_stream_repo_dir)
         except git.exc.GitCommandError as e:
             logging.error(f'Failed to checkout branch "{branch}", skipping')
             continue
@@ -317,7 +313,7 @@ if __name__ == '__main__':
         # Ive added the helm-lookup struct because its a bunch of 'black magic' how the CSM repo knows where to download charts from
         # the hms-hmcollector is the exception that broke the rule, so a lookup is needed.
 
-        helm_files = glob.glob(os.path.join(csm_dir, config["configuration"]["helm-manifest-directory"]) + "/*.yaml")
+        helm_files = glob.glob(os.path.join(product_stream_repo_dir, config["configuration"]["helm-manifest-directory"]) + "/*.yaml")
         for helm_file in helm_files:
             logging.info("Processing manifest {}".format(helm_file))
             with open(helm_file) as stream:

@@ -10,7 +10,7 @@ helm-repo-lookup:
     source_override: https://artifactory.algol60.net/artifactory/spc-helm-charts/
 github-repo-image-lookup: []
 configuration:
-  manifest-repo: spc-product-stream
+  product-stream-repo: spc-product-stream
   targeted-csm-branches:
     - main
     - release\/.+ # Match all release versions
