@@ -199,7 +199,7 @@ if __name__ == '__main__':
     # csm_repo = Repo.clone_from(csm_repo_metadata.ssh_url, csm_dir, multi_options=[
     #     f'--config http.https://github.com/.extraheader="AUTHORIZATION: basic {base64.b64encode(github_token.encode())}"'
     # ])
-    clone_url = f'https://{github_token}@github.com/Cray-HPE/{csm}'
+    clone_url = f'https://github.com/Cray-HPE/{csm}'
     csm_repo = Repo.clone_from(clone_url, csm_dir)
     logging.info("retrieved manifest repo")
 

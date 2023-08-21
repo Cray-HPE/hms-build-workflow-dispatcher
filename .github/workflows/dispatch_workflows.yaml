@@ -39,6 +39,11 @@ jobs:
           private-key: ${{ secrets.AUTOMATIC_WORKFLOW_DISPATCHER_APP_KEY }}
           app-id: ${{ secrets.AUTOMATIC_WORKFLOW_DISPATCHER_APP_ID }}
 
+      - name: Configure git for private repos
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+        run: git config --global url."https://x:${GITHUB_TOKEN}@github.com".insteadOf "https://github.com"
+
       - name: Dispatch workflows
         shell: bash
         env:
