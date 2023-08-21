@@ -56,7 +56,7 @@ jobs:
 
       - name: Render template
         id: template
-        uses: chuhlomin/render-template@v1.5
+        uses: chuhlomin/render-template@v1.7
         with:
           # It is expected the that the dispatch_workflows_summary_template.md.tpl is present in this repo.
           template: .github/dispatch_workflows_summary_template.md.tpl
