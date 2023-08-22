@@ -6,6 +6,10 @@ on:
     - cron: '0 7 * * *' #7am every day
 jobs:
   dispatch_workflows:
+    strategy:
+      matrix:
+        product-stream: ["csm", "spc"]
+      fail-fast: false
     name: Dispatch workflows
     runs-on: ubuntu-latest
     steps:
@@ -35,18 +39,24 @@ jobs:
           private-key: ${{ secrets.AUTOMATIC_WORKFLOW_DISPATCHER_APP_KEY }}
           app-id: ${{ secrets.AUTOMATIC_WORKFLOW_DISPATCHER_APP_ID }}
 
+      - name: Configure git for private repos
+        env:
+          GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
+        run: git config --global url."https://x:${GITHUB_TOKEN}@github.com".insteadOf "https://github.com"
+
       - name: Dispatch workflows
         shell: bash
         env:
           GITHUB_TOKEN: ${{ steps.get-token.outputs.token }}
           ARTIFACTORY_ALGOL60_READONLY_USERNAME: ${{ secrets.ARTIFACTORY_ALGOL60_READONLY_USERNAME }}
           ARTIFACTORY_ALGOL60_READONLY_TOKEN: ${{ secrets.ARTIFACTORY_ALGOL60_READONLY_TOKEN }}
+          DISPATCHER_CONFIGURATION_FILE: configuration_${{ matrix.product-stream }}.yaml
           DRYRUN: false
         run: ./dispatcher.py
 
       - name: Render template
         id: template
-        uses: chuhlomin/render-template@v1.5
+        uses: chuhlomin/render-template@v1.7
         with:
           # It is expected the that the dispatch_workflows_summary_template.md.tpl is present in this repo.
           template: .github/dispatch_workflows_summary_template.md.tpl

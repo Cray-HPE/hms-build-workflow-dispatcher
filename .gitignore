@@ -1,9 +1,13 @@
 credentials.json
 csm/
+spc-product-stream/
+output/
 helm_charts/
 *tar.gz
 *.tgz
+*.xlsx
 .idea/
+.env.sh
 
 # Prevent certificates from getting checked in
 *.ca

@@ -43,6 +43,7 @@ import yaml
 import subprocess
 import urllib
 import git
+import pathlib
 
 def GetDockerImageFromDiff(value, tag):
     # example: root['artifactory.algol60.net/csm-docker/stable']['images']['hms-trs-worker-http-v1'][0]
@@ -91,7 +92,7 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
                 "short_name": image["short-name"],
                 "image_tag": image["image-tag"],
                 "git_tag": image["git-tag"],
-                "csm_releases": image["csm-releases"],
+                "product_stream_releases": image["product-stream-releases"],
                 "job_conclusion": job_conclusion,
                 "job_url": job_url,
                 "workflow_name": workflow_name
@@ -109,6 +110,21 @@ def CreateJobSummaryTemplateValues(rebuilt_images, summary):
     template_values["repos"].sort(key=lambda e: (e["git_repo"]))
         
     return template_values
+
+def render_templates(product_stream_dir):
+    render_templates_script_path = pathlib.Path(product_stream_dir).joinpath("render_templates.sh")
+    logging.info(f"Checking for render templates script at: {render_templates_script_path}")
+    if render_templates_script_path.exists():
+        logging.info(f"Render templates script exists")
+        result = subprocess.run(["bash", str(render_templates_script_path)], capture_output=True, text=True)
+        if result.returncode != 0:
+            logging.error("Failed to render product stream templates. Exit code {}".format(result.returncode))
+            logging.error("stderr: {}".format(result.stderr))
+            logging.error("stdout: {}".format(result.stdout))
+            exit(1)
+    else:
+        logging.info(f"Render templates script does not exist")
+
 
 if __name__ == '__main__':
 
@@ -135,7 +151,13 @@ if __name__ == '__main__':
             logging.error(f'Provided password for {helm_repo} is empty')
             exit(1)
 
-    with open("configuration.yaml") as stream:
+
+    dispatcher_configuration_file = os.getenv("DISPATCHER_CONFIGURATION_FILE")
+    if dispatcher_configuration_file is None:
+        print("Environment variable DISPATCHER_CONFIGURATION_FILE is not set")
+        exit(1)
+    print(f"Configuration file: {dispatcher_configuration_file}")
+    with open(dispatcher_configuration_file) as stream:
         try:
             config = yaml.safe_load(stream)
         except yaml.YAMLError as exc:
@@ -150,7 +172,7 @@ if __name__ == '__main__':
     log_level = os.getenv('LOG_LEVEL', config["configuration"]["log-level"])
 
     logging.basicConfig(level=log_level)
-    logging.info("load configuration")
+    logging.info("Loaded configuration")
 
     dry_run = False
     if os.getenv("DRYRUN", "false").lower() == "true":
@@ -158,19 +180,38 @@ if __name__ == '__main__':
         dry_run = True
 
     ####################
-    # Download the CSM repo
+    # Download the product stream repo
     ####################
-    logging.info("retrieve manifest repo")
+    logging.info("retrieve product stream repo")
 
-    csm = config["configuration"]["manifest-repo"]
-    csm_repo_metadata = g.get_organization("Cray-HPE").get_repo(csm)
-    csm_dir = csm
+    product_stream_repo_name = config["configuration"]["product-stream-repo"]
+    product_stream_repo_metadata = g.get_organization("Cray-HPE").get_repo(product_stream_repo_name)
+    product_stream_repo_dir = product_stream_repo_name
     # Clean up in case it exsts
-    if os.path.exists(csm_dir):
-        shutil.rmtree(csm_dir)
+    if os.path.exists(product_stream_repo_dir):
+        shutil.rmtree(product_stream_repo_dir)
 
-    os.mkdir(csm_dir)
-    csm_repo = Repo.clone_from(csm_repo_metadata.clone_url, csm_dir)
+    os.mkdir(product_stream_repo_dir)
+
+    clone_url = f'https://github.com/Cray-HPE/{product_stream_repo_name}'
+    logging.info(f"Product stream repo clone URL: {clone_url}")
+    product_stream_repo = Repo.clone_from(clone_url, product_stream_repo_dir)
+    logging.info("retrieved manifest repo")
+
+    ####################
+    # Determine branches of intrest
+    ####################
+
+    targeted_branches = config["configuration"]["targeted-branches"]
+    for remote_ref in product_stream_repo.remote().refs:
+        branch_name = remote_ref.name.removeprefix("origin/")
+        for branch_regex in config["configuration"]["targeted-branch-regexes"]:
+            if branch_name not in targeted_branches and re.match(branch_regex, branch_name):
+                targeted_branches.append(branch_name)
+
+    logging.info('Targeted product stream branches')
+    for branch in targeted_branches:
+        logging.info(f'\t- {branch}')
 
     ####################
     # Go Get LIST of Docker Images we need to investigate!
@@ -179,17 +220,18 @@ if __name__ == '__main__':
     images_to_rebuild = {}
 
     docker_image_tuples = []
-    for branch in config["configuration"]["targeted-csm-branches"]:
-        logging.info("Checking out CSM branch {} for docker image extraction".format(branch))
+    for branch in targeted_branches:
+        logging.info("Checking out product stream branch {} for docker image extraction".format(branch))
 
         try:
-            csm_repo.git.checkout(branch)
+            product_stream_repo.git.checkout(branch)
+            render_templates(product_stream_repo_dir)
         except git.exc.GitCommandError as e:
             logging.error(f'Failed to checkout branch "{branch}", skipping')
             continue
 
         # load the docker index file
-        docker_index = os.path.join(csm_dir, config["configuration"]["docker-image-manifest"])
+        docker_index = os.path.join(product_stream_repo_dir, config["configuration"]["docker-image-manifest"])
         with open(docker_index) as stream:
             try:
                 manifest = yaml.safe_load(stream)
@@ -212,7 +254,9 @@ if __name__ == '__main__':
         # otherwise id have to do a docker inspect of some sort, which seems like a LOT of work
 
         ddiff = DeepDiff(compare, manifest)
-        changed = ddiff["values_changed"]
+        changed = {}
+        if "values_changed" in ddiff:
+            changed = ddiff["values_changed"]
         docker_image_tuples = []
         for k, v in changed.items():
             path_to_digest = k
@@ -253,13 +297,13 @@ if __name__ == '__main__':
                 # Check to see if this is a new image
                 if found_image["full-image"] not in list(map(lambda e: e["full-image"], images_to_rebuild[github_repo])):
                     # This is a new image
-                    found_image["csm-releases"] = [branch]
+                    found_image["product-stream-releases"] = [branch]
                     images_to_rebuild[github_repo].append(found_image)
                 else:
-                    # Add the accompanying CSM release branch to an image that was already found in a different CSM release
+                    # Add the accompanying product stream release branch to an image that was already found in a different product stream release
                     for image in images_to_rebuild[github_repo]:
                         if found_image["full-image"] == image["full-image"]:
-                            image["csm-releases"].append(branch)
+                            image["product-stream-releases"].append(branch)
 
     ####################
     # Start to process helm charts
@@ -269,10 +313,11 @@ if __name__ == '__main__':
     logging.info("find helm charts")
 
     all_charts = {}
-    for branch in config["configuration"]["targeted-csm-branches"]:
-        logging.info("Checking out CSM branch {} for helm chart image extraction".format(branch))
+    for branch in targeted_branches:
+        logging.info("Checking out product stream branch {} for helm chart image extraction".format(branch))
         try:
-            csm_repo.git.checkout(branch)
+            product_stream_repo.git.checkout(branch)
+            render_templates(product_stream_repo_dir)
         except git.exc.GitCommandError as e:
             logging.error(f'Failed to checkout branch "{branch}", skipping')
             continue
@@ -282,7 +327,7 @@ if __name__ == '__main__':
         # Ive added the helm-lookup struct because its a bunch of 'black magic' how the CSM repo knows where to download charts from
         # the hms-hmcollector is the exception that broke the rule, so a lookup is needed.
 
-        helm_files = glob.glob(os.path.join(csm_dir, config["configuration"]["helm-manifest-directory"]) + "/*.yaml")
+        helm_files = glob.glob(os.path.join(product_stream_repo_dir, config["configuration"]["helm-manifest-directory"]) + "/*.yaml")
         for helm_file in helm_files:
             logging.info("Processing manifest {}".format(helm_file))
             with open(helm_file) as stream:
@@ -294,9 +339,13 @@ if __name__ == '__main__':
                     # TODO Instead we should make a best effort attempt at rebuilding images, but we should exist an non-zero exit code
                     # to signal that not all images were rebuilt.
                     continue
-            upstream_sources = {}
-            for chart in manifest["spec"]["sources"]["charts"]:
-                upstream_sources[chart["name"]] = chart["location"]
+            # Upstream sources from loftsman
+            loftsman_upstream_sources = {}
+            if "sources" in manifest["spec"]: 
+                # Not all manifests have sources specified
+                for chart in manifest["spec"]["sources"]["charts"]:
+                    loftsman_upstream_sources[chart["name"]] = chart["location"]
+
             for chart in manifest["spec"]["charts"]:
                 chart_name = chart["name"]
                 chart_version = chart["version"]
@@ -306,36 +355,51 @@ if __name__ == '__main__':
                     download_url = None
                     for repo in helm_lookup:
                         if repo["chart"] == chart["name"]:
-                            download_url = urljoin(upstream_sources[chart["source"]],
-                                                              os.path.join(repo["path"], chart_name + "-" + str(
-                                                                  chart_version) + ".tgz"))
+                            upstream_source = None
+                            if "source_override" in repo:
+                                upstream_source = repo["source_override"] 
+                            elif "source" in chart and chart["source"] in loftsman_upstream_sources:
+                                upstream_source = loftsman_upstream_sources[chart["source"]]
+                            else:
+                                logging.fatal(f'Unable to determine source for chart: {chart_name}')
+
+                            logging.info(upstream_source)
+                            logging.info( os.path.join(repo["path"], chart_name + "-" + str(chart_version) + ".tgz"))
+
+
+                            # This if for if the upstream source was defined in loftsman manifest
+                            download_url = urljoin(upstream_source, 
+                                                   os.path.join(repo["path"], chart_name + "-" + str(chart_version) + ".tgz"))
+                            logging.info(download_url)
 
                     # Save chart overrides
                     # ASSUMPTION: It is being assumed that a HMS helm chart will be referenced only once in all loftsman manifests for any
-                    # CSM release. The following logic will need to change, if we every decide to deploy the same helm chart multiple times
+                    # product stream release. The following logic will need to change, if we every decide to deploy the same helm chart multiple times
                     # with different release names.                   
                     if chart_name not in all_charts:
                         all_charts[chart_name] = {}
                     if chart_version not in all_charts[chart_name]:
                         all_charts[chart_name][chart_version] = {}
-                        all_charts[chart_name][chart_version]["csm-releases"] = {} 
+                        all_charts[chart_name][chart_version]["product-stream-releases"] = {} 
                         all_charts[chart_name][chart_version]["download-url"] = download_url
     
-                    all_charts[chart_name][chart_version]["csm-releases"][branch] = {}
+                    all_charts[chart_name][chart_version]["product-stream-releases"][branch] = {}
                     if "values" in chart:
-                        all_charts[chart_name][chart_version]["csm-releases"][branch]["values"] = chart["values"]
+                        all_charts[chart_name][chart_version]["product-stream-releases"][branch]["values"] = chart["values"]
+                    
+                    logging.info(f'Chart information: {all_charts[chart_name][chart_version]}')
 
-    # The following is really ugly, but prints out a nice summary of the chart overrides across all of the CSM branches this script it is looking at.
+    # The following is really ugly, but prints out a nice summary of the chart overrides across all of the product stream branches this script it is looking at.
     # This looks ugly, as I'm preferring to make the helm templating process later in this script nicer.
     logging.info("Manifest value overrides")
     manifest_values_overrides = {}
-    for branch in config["configuration"]["targeted-csm-branches"]:
+    for branch in targeted_branches:
         manifest_values_overrides[branch] = {}
 
         for chart_name, versions in all_charts.items():
             for version_information in versions.values():
-                if branch in version_information["csm-releases"] and "values" in version_information["csm-releases"][branch]:
-                    manifest_values_overrides[branch][chart_name] = version_information["csm-releases"][branch]["values"]
+                if branch in version_information["product-stream-releases"] and "values" in version_information["product-stream-releases"][branch]:
+                    manifest_values_overrides[branch][chart_name] = version_information["product-stream-releases"][branch]["values"]
     logging.info("\n"+yaml.dump(manifest_values_overrides))
 
     ######
@@ -445,9 +509,9 @@ if __name__ == '__main__':
                         logging.info("\t- {}".format(image_repo))
 
                     # Now template the Helm chart to learn the image tags
-                    for branch in all_charts[chart["name"]][chart["version"]]["csm-releases"]:
-                        logging.info("\tCSM Branch {}".format(branch))
-                        chart_value_overrides = all_charts[chart["name"]][chart["version"]]["csm-releases"][branch].get("values")
+                    for branch in all_charts[chart["name"]][chart["version"]]["product-stream-releases"]:
+                        logging.info("\tProduct stream Branch {}".format(branch))
+                        chart_value_overrides = all_charts[chart["name"]][chart["version"]]["product-stream-releases"][branch].get("values")
                         
                         # Write out value overrides
                         values_override_path = os.path.join(helm_chart_dir, "values-{}.yaml".format(branch.replace("/", "-")))
@@ -464,26 +528,26 @@ if __name__ == '__main__':
                             exit(1)
 
                         logging.info("\t\tImages in use:")
-                        for image in result.stdout.splitlines():
-                            image_repo, image_tag = image.split(":", 2)
+                        for image_ref in result.stdout.splitlines():
+                            image_repo, image_tag = image_ref.split(":", 2)
 
                             if image_repo not in images_repos_of_interest:
                                 continue
-                            logging.info("\t\t- {}".format(image))
+                            logging.info("\t\t- {}".format(image_ref))
 
                             # Add the image to the list to be rebuilt if this is a new image
-                            if image not in list(map(lambda e: e["full-image"], images_to_rebuild[github_repo])):
+                            if image_ref not in list(map(lambda e: e["full-image"], images_to_rebuild[github_repo])):
                                 images_to_rebuild[github_repo].append({
-                                    "full-image": image,
+                                    "full-image": image_ref,
                                     "short-name": image_repo.split('/')[-1],
                                     "image-tag": image_tag,
-                                    "csm-releases": [branch]
+                                    "product-stream-releases": [branch]
                                 })
                             else:
-                                # Add the accompanying CSM release branch to an image that was already found in a different CSM release
+                                # Add the accompanying product stream release branch to an image that was already found in a different product stream release
                                 for image in images_to_rebuild[github_repo]:
-                                    if found_image["full-image"] == image["full-image"]:
-                                        image["csm-releases"].append(branch)
+                                    if image_ref == image["full-image"]:
+                                        image["product-stream-releases"].append(branch)
 
     ############################
     # Handle non-manifest images
@@ -512,7 +576,7 @@ if __name__ == '__main__':
                 "full-image": image_repo+":"+image_tag,
                 "short-name": image_repo.split('/')[-1],
                 "image-tag": image_tag,
-                "csm-releases": []
+                "product-stream-releases": []
             })
 
     #################

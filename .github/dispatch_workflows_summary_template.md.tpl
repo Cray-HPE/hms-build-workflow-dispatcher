@@ -21,7 +21,7 @@
 			<td><a href="https://artifactory.algol60.net/ui/repos/tree/General/csm-docker%2Fstable%2F{{ $image.short_name }}%2F{{ $image.image_tag }}">{{$image.full_image}}</a></td>
 			<td>
                 <ul>
-                {{- range $branch := $image.csm_releases }}
+                {{- range $branch := $image.product_stream_releases }}
                     <li>{{$branch}}</li>
                 {{- end }}
                 </ul>

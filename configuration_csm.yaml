@@ -47,18 +47,20 @@ github-repo-image-lookup:
   - github-repo: hardware-topology-assistant
     image: hardware-topology-assistant
 configuration:
-  manifest-repo: csm
-  targeted-csm-branches:
+  product-stream-repo: csm
+  targeted-branches:
     - main
     - release/1.9
     - release/1.8
     - release/1.7
     - release/1.6
     - release/1.5
+    - stable/1.5
     - release/1.4
     - release/1.3
     - release/1.3.0
     - stable/1.2
+  targeted-branch-regexes: []
   docker-image-manifest: docker/index.yaml
   helm-manifest-directory: manifests
   target-chart-regex: cray-hms-.*|cray-power-control|csm-redfish-interface-emulator
