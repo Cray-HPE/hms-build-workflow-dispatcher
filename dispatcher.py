@@ -587,9 +587,10 @@ if __name__ == '__main__':
     desired_workflow_names = ["Build and Publish Service Docker Images", "Build and Publish Docker Images",
                               "Build and Publish CT Docker Images", "Build and Publish hms-test Docker image"]
 
+    org = g.get_organization("Cray-HPE")
     for repo_name, val in images_to_rebuild.items():
         images = images_to_rebuild[repo_name]  # im going to be writing back to this
-        repo_data = g.get_organization("Cray-HPE").get_repo(repo_name)
+        repo_data = org.get_repo(repo_name)
         available_workflows = []
         for workflow in repo_data.get_workflows():
             if workflow.name in desired_workflow_names:
