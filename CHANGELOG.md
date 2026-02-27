@@ -25,6 +25,12 @@ Security - in case of vulnerabilities
 -->
 
 
+## [1.1.2] - 2026-02-27
+
+### Changed
+
+CASMHMS-6450:Update HMS build actions to latest versions
+
 ## [1.1.1] - 2022-09-22
 
 ### Changed
